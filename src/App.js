@@ -557,28 +557,15 @@ function DashboardPage({ tasks, setTasks, goals, pomodoroSessions, todayFocus, a
   const pct = todayTasks.length ? Math.round((doneTasks.length / todayTasks.length) * 100) : 0;
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
 
-  function toggleTask(id) {
-    setTasks(prev => {
-      const updated = prev.map(t => {
-        if (t.id !== id) return t;
-        const done = !t.done;
-        const now = new Date();
-        if (done) addNotif({ type: 'success', icon: '🎉', title: 'أحسنت! 🌟', msg: `أكملت: ${t.title}` });
-        return { ...t, done, completedAt: done ? `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}` : null };
-      });
-
-      const task = prev.find(t => t.id === id);
-      if (task && !task.done && task.repeat && task.repeat !== 'none') {
-        const nextDate = getNextRepeatDate(task.date, task.repeat);
-        const alreadyExists = updated.some(t => t.repeatParentId === id && t.date === nextDate);
-        if (!alreadyExists) {
-          const nextTask = { ...task, id: Date.now() + Math.random(), done: false, completedAt: null, date: nextDate, repeatParentId: id };
-          addNotif({ type: 'info', icon: '🔁', title: 'تم جدولة التكرار', msg: `${task.title} ← ${nextDate}` });
-          return [...updated, nextTask];
-        }
-      }
-      return updated;
-    });
+  async function toggleTask(id) {
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+    const done = !task.done;
+    const now = new Date();
+    const completedAt = done ? `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}` : null;
+    await supabase.from('tasks').update({ done, completed_at: completedAt }).eq('id', id);
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, done, completedAt } : t));
+    if (done) addNotif({ type: 'success', icon: '🎉', title: 'أحسنت! 🌟', msg: `أكملت: ${task.title}` });
   }
 
   return (
@@ -774,61 +761,74 @@ function GoalsPage({ goals, setGoals, addNotif }) {
   const [expandedGoal, setExpandedGoal] = useState(null);
   const [newSubtask, setNewSubtask] = useState('');
 
-  function addGoal() {
+  async function addGoal() {
     if (!addForm.title.trim()) return;
-    const g = { ...addForm, id: Date.now(), progress: 0, subtasks: [] };
-    setGoals(prev => [...prev, g]);
+    const uid = (await supabase.auth.getUser()).data.user?.id;
+    const { data, error } = await supabase.from('goals').insert({
+      user_id: uid, title: addForm.title, category: addForm.category || '',
+      progress: 0, status: addForm.status || 'active', color: addForm.color || '#6366f1',
+      start_date: addForm.startDate || '', end_date: addForm.endDate || '', subtasks: []
+    }).select().single();
+    if (data) {
+      setGoals(prev => [...prev, { ...data, subtasks: [] }]);
+      addNotif({ type: 'success', icon: '🎯', title: 'تم إنشاء الهدف', msg: data.title });
+    } else { addNotif({ type: 'warning', icon: '⚠️', title: 'خطأ', msg: error?.message }); }
     setShowAdd(false);
     setAddForm(EMPTY_GOAL_FORM);
-    addNotif({ type: 'success', icon: '🎯', title: 'تم إنشاء الهدف', msg: g.title });
   }
 
   function openEdit(g) {
-    setEditForm({ title: g.title, category: g.category || '', startDate: g.startDate || '', endDate: g.endDate || '', color: g.color, status: g.status });
+    setEditForm({ title: g.title, category: g.category || '', startDate: g.start_date || g.startDate || '', endDate: g.end_date || g.endDate || '', color: g.color, status: g.status });
     setEditGoal(g);
   }
 
-  function saveEdit() {
+  async function saveEdit() {
     if (!editForm.title.trim()) return;
-    setGoals(prev => prev.map(g => g.id === editGoal.id ? { ...g, ...editForm } : g));
+    await supabase.from('goals').update({
+      title: editForm.title, category: editForm.category, status: editForm.status,
+      color: editForm.color, start_date: editForm.startDate, end_date: editForm.endDate
+    }).eq('id', editGoal.id);
+    setGoals(prev => prev.map(g => g.id === editGoal.id ? { ...g, ...editForm, start_date: editForm.startDate, end_date: editForm.endDate } : g));
     addNotif({ type: 'info', icon: '✏️', title: 'تم تعديل الهدف', msg: editForm.title });
     setEditGoal(null);
   }
 
   function confirmDelete(g) { setDeleteGoal(g); }
 
-  function doDelete() {
+  async function doDelete() {
+    await supabase.from('goals').delete().eq('id', deleteGoal.id);
     setGoals(prev => prev.filter(g => g.id !== deleteGoal.id));
     addNotif({ type: 'warning', icon: '🗑️', title: 'تم حذف الهدف', msg: deleteGoal.title });
     setDeleteGoal(null);
     if (expandedGoal === deleteGoal.id) setExpandedGoal(null);
   }
 
-  function addSubtask(goalId) {
+  async function addSubtask(goalId) {
     if (!newSubtask.trim()) return;
-    setGoals(prev => prev.map(g => g.id === goalId
-      ? { ...g, subtasks: [...g.subtasks, { id: Date.now(), title: newSubtask, done: false }] }
-      : g
-    ));
+    const goal = goals.find(g => g.id === goalId);
+    if (!goal) return;
+    const updatedSubtasks = [...(goal.subtasks || []), { id: Date.now(), title: newSubtask, done: false }];
+    await supabase.from('goals').update({ subtasks: updatedSubtasks }).eq('id', goalId);
+    setGoals(prev => prev.map(g => g.id === goalId ? { ...g, subtasks: updatedSubtasks } : g));
     setNewSubtask('');
   }
 
-  function deleteSubtask(goalId, subId) {
-    setGoals(prev => prev.map(g => {
-      if (g.id !== goalId) return g;
-      const updated = g.subtasks.filter(s => s.id !== subId);
-      const progress = updated.length ? Math.round(updated.filter(s => s.done).length / updated.length * 100) : g.progress;
-      return { ...g, subtasks: updated, progress };
-    }));
+  async function deleteSubtask(goalId, subId) {
+    const goal = goals.find(g => g.id === goalId);
+    if (!goal) return;
+    const updated = goal.subtasks.filter(s => s.id !== subId);
+    const progress = updated.length ? Math.round(updated.filter(s => s.done).length / updated.length * 100) : goal.progress;
+    await supabase.from('goals').update({ subtasks: updated, progress }).eq('id', goalId);
+    setGoals(prev => prev.map(g => g.id === goalId ? { ...g, subtasks: updated, progress } : g));
   }
 
-  function toggleSubtask(goalId, subId) {
-    setGoals(prev => prev.map(g => {
-      if (g.id !== goalId) return g;
-      const updated = g.subtasks.map(s => s.id === subId ? { ...s, done: !s.done } : s);
-      const progress = Math.round((updated.filter(s => s.done).length / updated.length) * 100);
-      return { ...g, subtasks: updated, progress: updated.length ? progress : g.progress };
-    }));
+  async function toggleSubtask(goalId, subId) {
+    const goal = goals.find(g => g.id === goalId);
+    if (!goal) return;
+    const updated = goal.subtasks.map(s => s.id === subId ? { ...s, done: !s.done } : s);
+    const progress = updated.length ? Math.round(updated.filter(s => s.done).length / updated.length * 100) : goal.progress;
+    await supabase.from('goals').update({ subtasks: updated, progress }).eq('id', goalId);
+    setGoals(prev => prev.map(g => g.id === goalId ? { ...g, subtasks: updated, progress } : g));
   }
 
   return (
@@ -1010,13 +1010,20 @@ function TasksPage({ tasks, setTasks, goals, addNotif }) {
   const [editForm, setEditForm] = useState(EMPTY_TASK_FORM);
   const [filter, setFilter] = useState('all');
 
-  function addTask() {
+  async function addTask() {
     if (!addForm.title.trim()) return;
-    const t = { ...addForm, id: Date.now(), done: false, completedAt: null, goalId: addForm.goalId ? parseInt(addForm.goalId) : null, repeat: addForm.repeat || 'none' };
-    setTasks(prev => [...prev, t]);
+    const { data, error } = await supabase.from('tasks').insert({
+      user_id: (await supabase.auth.getUser()).data.user?.id,
+      title: addForm.title, priority: addForm.priority,
+      date: addForm.date, done: false, completed_at: null,
+      repeat: addForm.repeat || 'none', goal_id: null
+    }).select().single();
+    if (data) {
+      setTasks(prev => [...prev, { ...data, completedAt: null, goalId: null }]);
+      addNotif({ type: 'success', icon: '✅', title: 'تم إضافة المهمة', msg: data.title });
+    } else { addNotif({ type: 'warning', icon: '⚠️', title: 'خطأ', msg: error?.message }); }
     setShowAdd(false);
     setAddForm(EMPTY_TASK_FORM);
-    addNotif({ type: 'success', icon: '✅', title: 'تم إضافة المهمة', msg: t.title });
   }
 
   function openEdit(t) {
@@ -1024,58 +1031,57 @@ function TasksPage({ tasks, setTasks, goals, addNotif }) {
     setEditTask(t);
   }
 
-  function saveEdit() {
+  async function saveEdit() {
     if (!editForm.title.trim()) return;
-    setTasks(prev => prev.map(t => t.id === editTask.id
-      ? { ...t, ...editForm, goalId: editForm.goalId ? parseInt(editForm.goalId) : null, repeat: editForm.repeat || 'none' }
-      : t
-    ));
+    await supabase.from('tasks').update({
+      title: editForm.title, priority: editForm.priority,
+      date: editForm.date, repeat: editForm.repeat || 'none'
+    }).eq('id', editTask.id);
+    setTasks(prev => prev.map(t => t.id === editTask.id ? { ...t, ...editForm, repeat: editForm.repeat || 'none' } : t));
     addNotif({ type: 'info', icon: '✏️', title: 'تم تعديل المهمة', msg: editForm.title });
     setEditTask(null);
   }
 
-  function doDeleteTask() {
+  async function doDeleteTask() {
+    await supabase.from('tasks').delete().eq('id', deleteTask.id);
     setTasks(prev => prev.filter(t => t.id !== deleteTask.id));
     addNotif({ type: 'warning', icon: '🗑️', title: 'تم حذف المهمة', msg: deleteTask.title });
     setDeleteTask(null);
   }
 
-  function toggleTask(id) {
-    setTasks(prev => {
-      const updated = prev.map(t => {
-        if (t.id !== id) return t;
-        const done = !t.done;
-        const now = new Date();
-        if (done) addNotif({ type: 'success', icon: '🎉', title: 'أحسنت! 🌟', msg: `أكملت: ${t.title}` });
-        return { ...t, done, completedAt: done ? `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}` : null };
-      });
-
-      // If completing a repeating task → add fresh copy for next occurrence
-      const task = prev.find(t => t.id === id);
-      if (task && !task.done && task.repeat && task.repeat !== 'none') {
+  async function toggleTask(id) {
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+    const done = !task.done;
+    const now = new Date();
+    const completedAt = done ? `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}` : null;
+    await supabase.from('tasks').update({ done, completed_at: completedAt }).eq('id', id);
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, done, completedAt } : t));
+    if (done) {
+      addNotif({ type: 'success', icon: '🎉', title: 'أحسنت! 🌟', msg: `أكملت: ${task.title}` });
+      if (task.repeat && task.repeat !== 'none') {
         const nextDate = getNextRepeatDate(task.date, task.repeat);
-        // Don't duplicate if a future copy already exists
-        const alreadyExists = updated.some(t => t.repeatParentId === id && t.date === nextDate);
-        if (!alreadyExists) {
-          const nextTask = {
-            ...task,
-            id: Date.now() + Math.random(),
-            done: false,
-            completedAt: null,
-            date: nextDate,
-            repeatParentId: id,
-          };
-          addNotif({ type: 'info', icon: '🔁', title: 'تم جدولة التكرار', msg: `${task.title} ← ${nextDate}` });
-          return [...updated, nextTask];
+        const exists = tasks.some(t => t.date === nextDate && t.title === task.title && !t.done);
+        if (!exists) {
+          const uid = (await supabase.auth.getUser()).data.user?.id;
+          const { data: next } = await supabase.from('tasks').insert({
+            user_id: uid, title: task.title, priority: task.priority,
+            date: nextDate, done: false, completed_at: null, repeat: task.repeat, goal_id: null
+          }).select().single();
+          if (next) {
+            setTasks(prev => [...prev, { ...next, completedAt: null }]);
+            addNotif({ type: 'info', icon: '🔁', title: 'تم جدولة التكرار', msg: `${task.title} ← ${nextDate}` });
+          }
         }
       }
-      return updated;
-    });
+    }
   }
 
-  function reschedule(id) {
+  async function reschedule(id) {
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, date: tomorrow.toISOString().split("T")[0] } : t));
+    const newDate = tomorrow.toISOString().split("T")[0];
+    await supabase.from('tasks').update({ date: newDate }).eq('id', id);
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, date: newDate } : t));
     addNotif({ type: 'info', icon: '📅', title: 'تم إعادة الجدولة', msg: 'المهمة ستظهر غداً' });
   }
 
