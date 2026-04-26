@@ -1516,19 +1516,21 @@ function AIPage({ tasks, goals, addNotif }) {
 export default function App() {
   const [page, setPage] = useState('dashboard');
   const [goals, setGoals] = useState(
+    () => { try { const s = localStorage.getItem('injaz-goals'); return s ? JSON.parse(s) : INITIAL_GOALS; } catch { return INITIAL_GOALS; } }
+  );
   const [tasks, setTasks] = useState(
+    () => { try { const s = localStorage.getItem('injaz-tasks'); return s ? JSON.parse(s) : INITIAL_TASKS; } catch { return INITIAL_TASKS; } }
+  );
   const [pomodoroSessions, setPomodoroSessions] = useState(2);
   const [todayFocus, setTodayFocus] = useState(0.83);
   const [notifs, setNotifs] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-useEffect(() => {
-  localStorage.setItem('injaz-tasks', JSON.stringify(tasks));
-}, [tasks]);
+  useEffect(() => { try { localStorage.setItem('injaz-tasks', JSON.stringify(tasks)); } catch {} }, [tasks]);
+  useEffect(() => { try { localStorage.setItem('injaz-goals', JSON.stringify(goals)); } catch {} }, [goals]);
 
-useEffect(() => {
-  localStorage.setItem('injaz-goals', JSON.stringify(goals));
-}, [goals]);    const id = Date.now();
+  function addNotif(n) {
+    const id = Date.now();
     setNotifs(p => [...p, { ...n, id }]);
     setTimeout(() => setNotifs(p => p.filter(x => x.id !== id)), 3500);
   }
