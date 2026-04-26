@@ -1,4 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+const SUPABASE_URL = "https://gkzdepanaphjijrqepie.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdremj0ZXBhbmFwaGppanJxZXBpZSIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzQ1NjY1NzA2LCJleHAiOjIwNjEyNDE3MDZ9.eyJhbGciOiJIUzI1NiJ9";
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ============================================================
 // ARABIC PRODUCTIVITY SYSTEM - نظام إدارة المهام والأهداف
@@ -1511,23 +1516,164 @@ function AIPage({ tasks, goals, addNotif }) {
 }
 
 // ============================================================
+// AUTH PAGE
+// ============================================================
+function AuthPage({ onAuth }) {
+  const [mode, setMode] = useState('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit() {
+    if (!email || !password) { setError('يرجى إدخال البريد وكلمة المرور'); return; }
+    setLoading(true); setError('');
+    try {
+      let result;
+      if (mode === 'login') {
+        result = await supabase.auth.signInWithPassword({ email, password });
+      } else {
+        result = await supabase.auth.signUp({ email, password });
+      }
+      if (result.error) { setError(result.error.message); }
+      else if (result.data?.user) { onAuth(result.data.user); }
+      else if (mode === 'signup') { setError('تم إنشاء الحساب! تحقق من بريدك للتفعيل ثم سجّل دخول.'); setMode('login'); }
+    } catch (e) { setError('حدث خطأ، حاول مرة أخرى'); }
+    setLoading(false);
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)', fontFamily: "'IBM Plex Sans Arabic', sans-serif", direction: 'rtl' }}>
+      <style>{styles}</style>
+      <div style={{ width: '100%', maxWidth: 400, padding: '0 20px' }}>
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div style={{ width: 64, height: 64, background: 'linear-gradient(135deg, var(--accent), var(--accent3))', borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, margin: '0 auto 16px', boxShadow: '0 8px 30px rgba(124,110,240,0.4)' }}>⚡</div>
+          <div style={{ fontSize: 28, fontWeight: 900, fontFamily: 'Tajawal, sans-serif', color: 'var(--text)' }}>إنجاز</div>
+          <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>نظام إدارة حياتك الشخصية</div>
+        </div>
+
+        <div className="card" style={{ padding: 28 }}>
+          <div className="tabs" style={{ marginBottom: 24 }}>
+            <div className={`tab ${mode === 'login' ? 'active' : ''}`} onClick={() => { setMode('login'); setError(''); }}>تسجيل الدخول</div>
+            <div className={`tab ${mode === 'signup' ? 'active' : ''}`} onClick={() => { setMode('signup'); setError(''); }}>حساب جديد</div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">📧 البريد الإلكتروني</label>
+            <input className="form-input" type="email" placeholder="your@email.com" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">🔒 كلمة المرور</label>
+            <input className="form-input" type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()} />
+          </div>
+
+          {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: 'var(--red)', marginBottom: 16 }}>{error}</div>}
+
+          <button className="btn btn-primary w-full" onClick={submit} disabled={loading} style={{ width: '100%', justifyContent: 'center', height: 44, fontSize: 15 }}>
+            {loading ? <div className="spinner" /> : mode === 'login' ? '🚀 دخول' : '✨ إنشاء حساب'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // MAIN APP
 // ============================================================
 export default function App() {
   const [page, setPage] = useState('dashboard');
-  const [goals, setGoals] = useState(
-    () => { try { const s = localStorage.getItem('injaz-goals'); return s ? JSON.parse(s) : INITIAL_GOALS; } catch { return INITIAL_GOALS; } }
-  );
-  const [tasks, setTasks] = useState(
-    () => { try { const s = localStorage.getItem('injaz-tasks'); return s ? JSON.parse(s) : INITIAL_TASKS; } catch { return INITIAL_TASKS; } }
-  );
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [goals, setGoalsState] = useState([]);
+  const [tasks, setTasksState] = useState([]);
   const [pomodoroSessions, setPomodoroSessions] = useState(2);
   const [todayFocus, setTodayFocus] = useState(0.83);
   const [notifs, setNotifs] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [dbLoading, setDbLoading] = useState(false);
 
-  useEffect(() => { try { localStorage.setItem('injaz-tasks', JSON.stringify(tasks)); } catch {} }, [tasks]);
-  useEffect(() => { try { localStorage.setItem('injaz-goals', JSON.stringify(goals)); } catch {} }, [goals]);
+  // Check session on load
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setUser(data.session?.user || null);
+      setAuthLoading(false);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
+      setUser(session?.user || null);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  // Load data when user logs in
+  useEffect(() => {
+    if (user) { loadData(); }
+    else { setGoalsState([]); setTasksState([]); }
+  }, [user]);
+
+  async function loadData() {
+    setDbLoading(true);
+    const [{ data: goalsData }, { data: tasksData }] = await Promise.all([
+      supabase.from('goals').select('*').eq('user_id', user.id).order('created_at'),
+      supabase.from('tasks').select('*').eq('user_id', user.id).order('created_at'),
+    ]);
+    if (goalsData) setGoalsState(goalsData.map(g => ({ ...g, subtasks: g.subtasks || [] })));
+    if (tasksData) setTasksState(tasksData);
+    setDbLoading(false);
+  }
+
+  // Wrap setGoals to sync with Supabase
+  async function setGoals(updater) {
+    setGoalsState(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      syncGoals(prev, next);
+      return next;
+    });
+  }
+
+  async function syncGoals(prev, next) {
+    const added = next.filter(n => !prev.find(p => p.id === n.id));
+    const removed = prev.filter(p => !next.find(n => n.id === p.id));
+    const changed = next.filter(n => {
+      const old = prev.find(p => p.id === n.id);
+      return old && JSON.stringify(old) !== JSON.stringify(n);
+    });
+    for (const g of added) {
+      await supabase.from('goals').insert({ ...g, user_id: user.id, id: undefined });
+    }
+    for (const g of removed) {
+      await supabase.from('goals').delete().eq('id', g.id);
+    }
+    for (const g of changed) {
+      await supabase.from('goals').update({ title: g.title, category: g.category, progress: g.progress, status: g.status, color: g.color, start_date: g.startDate || g.start_date, end_date: g.endDate || g.end_date, subtasks: g.subtasks }).eq('id', g.id);
+    }
+  }
+
+  async function setTasks(updater) {
+    setTasksState(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      syncTasks(prev, next);
+      return next;
+    });
+  }
+
+  async function syncTasks(prev, next) {
+    const added = next.filter(n => !prev.find(p => p.id === n.id));
+    const removed = prev.filter(p => !next.find(n => n.id === p.id));
+    const changed = next.filter(n => {
+      const old = prev.find(p => p.id === n.id);
+      return old && JSON.stringify(old) !== JSON.stringify(n);
+    });
+    for (const t of added) {
+      await supabase.from('tasks').insert({ title: t.title, priority: t.priority, date: t.date, done: t.done, completed_at: t.completedAt, repeat: t.repeat || 'none', goal_id: null, user_id: user.id });
+    }
+    for (const t of removed) {
+      await supabase.from('tasks').delete().eq('id', t.id);
+    }
+    for (const t of changed) {
+      await supabase.from('tasks').update({ title: t.title, priority: t.priority, date: t.date, done: t.done, completed_at: t.completedAt, repeat: t.repeat || 'none' }).eq('id', t.id);
+    }
+  }
 
   function addNotif(n) {
     const id = Date.now();
@@ -1538,6 +1684,11 @@ export default function App() {
   function onPomodoroSession(mins) {
     setPomodoroSessions(p => p + 1);
     setTodayFocus(p => p + mins / 60);
+  }
+
+  async function logout() {
+    await supabase.auth.signOut();
+    setUser(null);
   }
 
   const today = new Date();
@@ -1555,14 +1706,24 @@ export default function App() {
 
   const PAGE_TITLES = { dashboard: 'لوحة التحكم', goals: 'إدارة الأهداف', tasks: 'المهام اليومية', pomodoro: 'مؤقت بومودورو', stats: 'الإحصائيات', ai: 'المساعد الذكي' };
 
+  if (authLoading) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0b0f' }}>
+      <style>{styles}</style>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>⚡</div>
+        <div className="spinner" style={{ margin: '0 auto' }} />
+      </div>
+    </div>
+  );
+
+  if (!user) return <AuthPage onAuth={setUser} />;
+
   return (
     <>
       <style>{styles}</style>
       <div className="app-shell">
-        {/* Mobile overlay */}
         <div className={`mobile-overlay ${sidebarOpen ? 'show' : ''}`} onClick={() => setSidebarOpen(false)} />
 
-        {/* Sidebar */}
         <nav className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
           <div className="sidebar-logo">
             <div className="logo-mark">
@@ -1587,17 +1748,16 @@ export default function App() {
           </div>
 
           <div className="sidebar-footer">
-            <div className="user-card">
-              <div className="user-avatar">م</div>
+            <div className="user-card" onClick={logout} title="تسجيل الخروج">
+              <div className="user-avatar">{user.email?.[0]?.toUpperCase() || 'م'}</div>
               <div>
-                <div className="user-name">محمد أحمد</div>
-                <div className="user-role">🟢 نشط الآن</div>
+                <div className="user-name" style={{ fontSize: 12 }}>{user.email}</div>
+                <div className="user-role" style={{ color: 'var(--red)', fontSize: 11 }}>🚪 تسجيل خروج</div>
               </div>
             </div>
           </div>
         </nav>
 
-        {/* Main */}
         <div className="main">
           <div className="topbar">
             <div>
@@ -1606,8 +1766,8 @@ export default function App() {
             </div>
             <div className="topbar-actions">
               <div className="btn-icon menu-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>☰</div>
+              {dbLoading && <div className="spinner" style={{ width: 18, height: 18 }} />}
               <div className="btn-icon" onClick={() => addNotif({ type: 'info', icon: '🔔', title: 'لا إشعارات جديدة' })}>🔔</div>
-              <div className="btn-icon" title="الوضع المضيء">☀️</div>
             </div>
           </div>
 
