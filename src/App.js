@@ -1587,11 +1587,12 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [goals, setGoalsState] = useState([]);
   const [tasks, setTasksState] = useState([]);
-  const [pomodoroSessions, setPomodoroSessions] = useState(2);
-  const [todayFocus, setTodayFocus] = useState(0.83);
+  const [pomodoroSessions, setPomodoroSessions] = useState(0);
+  const [todayFocus, setTodayFocus] = useState(0);
   const [notifs, setNotifs] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [dbLoading, setDbLoading] = useState(false);
+  const [dbLoading, setDbLoading] = useState(true);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
   // Check session on load
   useEffect(() => {
@@ -1613,13 +1614,17 @@ export default function App() {
 
   async function loadData(uid) {
     setDbLoading(true);
-    const [{ data: goalsData }, { data: tasksData }] = await Promise.all([
-      supabase.from('goals').select('*').eq('user_id', uid).order('created_at'),
-      supabase.from('tasks').select('*').eq('user_id', uid).order('created_at'),
-    ]);
-    if (goalsData) setGoalsState(goalsData.map(g => ({ ...g, subtasks: g.subtasks || [] })));
-    if (tasksData) setTasksState(tasksData.map(t => ({ ...t, completedAt: t.completed_at, goalId: t.goal_id })));
+    setDataLoaded(false);
+    try {
+      const [{ data: goalsData, error: ge }, { data: tasksData, error: te }] = await Promise.all([
+        supabase.from('goals').select('*').eq('user_id', uid).order('created_at'),
+        supabase.from('tasks').select('*').eq('user_id', uid).order('created_at'),
+      ]);
+      if (goalsData) setGoalsState(goalsData.map(g => ({ ...g, subtasks: g.subtasks || [] })));
+      if (tasksData) setTasksState(tasksData.map(t => ({ ...t, completedAt: t.completed_at, goalId: t.goal_id })));
+    } catch(e) { console.error('loadData error', e); }
     setDbLoading(false);
+    setDataLoaded(true);
   }
 
   // GOALS — direct DB operations
@@ -1737,17 +1742,18 @@ export default function App() {
 
   const PAGE_TITLES = { dashboard: 'لوحة التحكم', goals: 'إدارة الأهداف', tasks: 'المهام اليومية', pomodoro: 'مؤقت بومودورو', stats: 'الإحصائيات', ai: 'المساعد الذكي' };
 
-  if (authLoading) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0b0f' }}>
+  const LoadingScreen = () => (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0b0f', flexDirection: 'column', gap: 16 }}>
       <style>{styles}</style>
-      <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 48, marginBottom: 16 }}>⚡</div>
-        <div className="spinner" style={{ margin: '0 auto' }} />
-      </div>
+      <div style={{ fontSize: 52 }}>⚡</div>
+      <div className="spinner" style={{ margin: '0 auto' }} />
+      <div style={{ color: 'var(--text2)', fontSize: 13, fontFamily: 'IBM Plex Sans Arabic, sans-serif' }}>جاري تحميل بياناتك...</div>
     </div>
   );
 
+  if (authLoading) return <LoadingScreen />;
   if (!user) return <AuthPage onAuth={setUser} />;
+  if (!dataLoaded) return <LoadingScreen />;
 
   return (
     <>
