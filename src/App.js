@@ -1515,15 +1515,20 @@ function AIPage({ tasks, goals, addNotif }) {
 // ============================================================
 export default function App() {
   const [page, setPage] = useState('dashboard');
-  const [goals, setGoals] = useState(INITIAL_GOALS);
-  const [tasks, setTasks] = useState(INITIAL_TASKS);
+  const [goals, setGoals] = useState(
+  const [tasks, setTasks] = useState(
   const [pomodoroSessions, setPomodoroSessions] = useState(2);
   const [todayFocus, setTodayFocus] = useState(0.83);
   const [notifs, setNotifs] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  function addNotif(n) {
-    const id = Date.now();
+useEffect(() => {
+  localStorage.setItem('injaz-tasks', JSON.stringify(tasks));
+}, [tasks]);
+
+useEffect(() => {
+  localStorage.setItem('injaz-goals', JSON.stringify(goals));
+}, [goals]);    const id = Date.now();
     setNotifs(p => [...p, { ...n, id }]);
     setTimeout(() => setNotifs(p => p.filter(x => x.id !== id)), 3500);
   }
