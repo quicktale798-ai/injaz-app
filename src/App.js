@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gkzdepanaphjijrqepie.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdremj0ZXBhbmFwaGppanJxZXBpZSIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzQ1NjY1NzA2LCJleHAiOjIwNjEyNDE3MDZ9.eyJhbGciOiJIUzI1NiJ9";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdremRlcGFuYXBoamlqcnFlcGllIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjQyMzEsImV4cCI6MjA5MjgwMDIzMX0.Rsh4wgCtLSa7tQEUuvYLyFfDOSqVwzizibLA0MTORoc";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ============================================================
