@@ -629,6 +629,62 @@ function PrayerTracker() {
 }
 
 // ============================================================
+// ============================================================
+// PRAYERS TRACKER
+// ============================================================
+const PRAYERS = [
+  { id: 'fajr',    name: 'الفجر',  icon: '🌙' },
+  { id: 'dhuhr',   name: 'الظهر',  icon: '☀️' },
+  { id: 'asr',     name: 'العصر',  icon: '🌤️' },
+  { id: 'maghrib', name: 'المغرب', icon: '🌅' },
+  { id: 'isha',    name: 'العشاء', icon: '🌃' },
+];
+
+function PrayerTracker() {
+  const today = new Date().toISOString().split('T')[0];
+  const key = `prayers-${today}`;
+  const [checked, setChecked] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(key)) || []; } catch { return []; }
+  });
+  useEffect(() => {
+    const last = localStorage.getItem('prayer-last-day');
+    if (last !== today) {
+      localStorage.setItem('prayer-last-day', today);
+      localStorage.removeItem(key);
+      setChecked([]);
+    }
+  }, []);
+  function toggle(id) {
+    setChecked(prev => {
+      const next = prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id];
+      localStorage.setItem(key, JSON.stringify(next));
+      return next;
+    });
+  }
+  const allDone = checked.length === 5;
+  return (
+    <div style={{ background:'linear-gradient(135deg,rgba(124,110,240,0.1),rgba(6,182,212,0.05))', border:'1px solid rgba(124,110,240,0.2)', borderRadius:16, padding:'14px 16px' }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+        <span style={{ fontSize:14, fontWeight:700, display:'flex', alignItems:'center', gap:8 }}>🕌 الصلوات الخمس</span>
+        <span style={{ fontSize:11, fontWeight:700, color: allDone ? 'var(--green)' : 'var(--text2)' }}>{checked.length}/5 {allDone ? '✅' : ''}</span>
+      </div>
+      <div style={{ display:'flex', gap:6 }}>
+        {PRAYERS.map(p => {
+          const done = checked.includes(p.id);
+          return (
+            <div key={p.id} onClick={() => toggle(p.id)} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:5, padding:'10px 2px', borderRadius:12, cursor:'pointer', transition:'all 0.25s', background: done ? 'rgba(124,110,240,0.25)' : 'var(--bg3)', border:`1px solid ${done ? 'rgba(124,110,240,0.45)' : 'var(--border)'}`, transform: done ? 'translateY(-3px)' : 'none', boxShadow: done ? '0 6px 16px rgba(124,110,240,0.2)' : 'none' }}>
+              <span style={{ fontSize:20 }}>{done ? '✅' : p.icon}</span>
+              <span style={{ fontSize:9, fontWeight:700, color: done ? 'var(--accent2)' : 'var(--text3)' }}>{p.name}</span>
+            </div>
+          );
+        })}
+      </div>
+      {allDone && <div style={{ textAlign:'center', marginTop:10, fontSize:11, color:'var(--green)', fontWeight:700 }}>🌟 ماشاء الله — أكملت صلواتك اليوم!</div>}
+    </div>
+  );
+}
+
+// ============================================================
 // DASHBOARD PAGE
 // ============================================================
 function DashboardPage({ tasks, setTasks, goals, setGoals, pomodoroSessions, todayFocus, addNotif }) {
@@ -809,7 +865,6 @@ function DashboardPage({ tasks, setTasks, goals, setGoals, pomodoroSessions, tod
     </div>
   );
 }
-// ============================================================
 const EMPTY_GOAL_FORM = { title: '', category: '', startDate: '', endDate: '', color: '#6366f1', status: 'active' };
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#06b6d4', '#8b5cf6', '#ec4899'];
 
