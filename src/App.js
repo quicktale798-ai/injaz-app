@@ -473,6 +473,30 @@ const styles = `
     .mobile-overlay.show { display: block; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 99; }
   }
 
+  /* ALERT BANNER */
+  .alert-banner {
+    position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
+    z-index: 500; display: flex; flex-direction: column; gap: 8px;
+    width: calc(100% - 40px); max-width: 400px;
+    animation: slideDown 0.3s ease;
+  }
+  @keyframes slideDown { from { opacity:0; transform: translateX(-50%) translateY(-20px); } to { opacity:1; transform: translateX(-50%) translateY(0); } }
+  .alert-card {
+    border-radius: 14px; padding: 14px 18px;
+    display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+    backdrop-filter: blur(20px);
+    animation: fadeIn 0.3s ease;
+  }
+  .alert-card.now { background: linear-gradient(135deg, rgba(239,68,68,0.95), rgba(220,38,38,0.95)); border: 1px solid rgba(255,255,255,0.2); }
+  .alert-card.warn { background: linear-gradient(135deg, rgba(245,158,11,0.95), rgba(217,119,6,0.95)); border: 1px solid rgba(255,255,255,0.2); }
+  .alert-icon { font-size: 24px; flex-shrink: 0; }
+  .alert-content { flex: 1; }
+  .alert-title { font-size: 13px; font-weight: 700; color: white; }
+  .alert-task { font-size: 12px; color: rgba(255,255,255,0.85); margin-top: 2px; }
+  .alert-close { color: rgba(255,255,255,0.7); cursor: pointer; font-size: 16px; flex-shrink: 0; }
+  .alert-close:hover { color: white; }
+
   /* LOADING SPINNER */
   .spinner { width: 20px; height: 20px; border: 2px solid rgba(124,110,240,0.3); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -1842,54 +1866,75 @@ export default function App() {
     localStorage.setItem('injaz-last-reset', today);
   }, [user]);
 
-  // Browser notification system — checks every minute
+  // ── Notification System ──────────────────────────────────
+  const [activeAlerts, setActiveAlerts] = useState([]);
+
   useEffect(() => {
     if (!user) return;
-
-    // Request permission
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
 
-    function checkNotifications() {
-      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    function sendAlert(task, type) {
+      const key = `alert-${task.id}-${type}-${new Date().toDateString()}`;
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, '1');
+      const isNow = type === 'now';
+      const alertId = Date.now() + Math.random();
+
+      // In-app banner
+      setActiveAlerts(prev => [...prev, { id: alertId, task, isNow }]);
+      setTimeout(() => setActiveAlerts(prev => prev.filter(a => a.id !== alertId)), 10000);
+
+      // Browser notification
+      if ('Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification(isNow ? '⏰ حان وقت المهمة!' : '🔔 تذكير — بعد 5 دقائق', {
+            body: task.title, dir: 'rtl', lang: 'ar',
+            icon: '/icons/icon-192.png', tag: key,
+          });
+        } catch(e) {}
+      }
+
+      // Beep sound
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        [isNow ? 880 : 660, isNow ? 1100 : 880].forEach((freq, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.frequency.value = freq; osc.type = 'sine';
+          gain.gain.setValueAtTime(0.25, ctx.currentTime + i * 0.25);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.25 + 0.4);
+          osc.start(ctx.currentTime + i * 0.25);
+          osc.stop(ctx.currentTime + i * 0.25 + 0.4);
+        });
+      } catch(e) {}
+    }
+
+    function checkTasks() {
       const now = new Date();
       const today = now.toISOString().split('T')[0];
-      const currentTime = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+      const hh = now.getHours().toString().padStart(2,'0');
+      const mm = now.getMinutes().toString().padStart(2,'0');
+      const currentTime = `${hh}:${mm}`;
 
       tasks.forEach(t => {
-        if (t.done) return;
-        if (t.date !== today) return;
-        if (!t.time) return;
-        function sendNotif(title, body, tag) {
-          const key = `done-${tag}`;
-          if (localStorage.getItem(key)) return;
-          localStorage.setItem(key, '1');
-          // Use SW if available for better delivery
-          if (navigator.serviceWorker?.controller) {
-            navigator.serviceWorker.controller.postMessage({ type: 'SHOW_NOTIFICATION', title, body, tag });
-          } else if (Notification.permission === 'granted') {
-            new Notification(title, { body, icon: '/icons/icon-192.png', tag, dir: 'rtl' });
-          }
-        }
-
-        // Notify at exact time
+        if (t.done || t.date !== today || !t.time) return;
         if (t.time === currentTime) {
-          sendNotif('⏰ حان وقت المهمة!', t.title, `notif-${t.id}-${today}-${currentTime}`);
-        }
-        // 5-min warning
-        const taskTime = new Date(`${today}T${t.time}`);
-        const warnTime = new Date(taskTime.getTime() - 5 * 60000);
-        const warnHH = warnTime.getHours().toString().padStart(2,'0');
-        const warnMM = warnTime.getMinutes().toString().padStart(2,'0');
-        if (`${warnHH}:${warnMM}` === currentTime) {
-          sendNotif('🔔 تذكير — بعد 5 دقائق', t.title, `warn-${t.id}-${today}-${warnHH}:${warnMM}`);
+          sendAlert(t, 'now');
+        } else {
+          try {
+            const taskDate = new Date(`${today}T${t.time}:00`);
+            const diff = taskDate - now;
+            if (diff > 0 && diff <= 5 * 60 * 1000 + 59000) sendAlert(t, 'warn');
+          } catch(e) {}
         }
       });
     }
 
-    const interval = setInterval(checkNotifications, 60000);
-    checkNotifications(); // Run immediately
+    const interval = setInterval(checkTasks, 30000);
+    checkTasks();
     return () => clearInterval(interval);
   }, [user, tasks]);
 
@@ -2023,6 +2068,22 @@ export default function App() {
       </div>
 
       <Notification notifs={notifs} />
+
+      {/* In-app alert banners */}
+      {activeAlerts.length > 0 && (
+        <div className="alert-banner">
+          {activeAlerts.map(a => (
+            <div key={a.id} className={`alert-card ${a.isNow ? 'now' : 'warn'}`}>
+              <div className="alert-icon">{a.isNow ? '⏰' : '🔔'}</div>
+              <div className="alert-content">
+                <div className="alert-title">{a.isNow ? 'حان وقت المهمة!' : 'تذكير — بعد 5 دقائق'}</div>
+                <div className="alert-task">{a.task.title}</div>
+              </div>
+              <div className="alert-close" onClick={() => setActiveAlerts(prev => prev.filter(x => x.id !== a.id))}>✕</div>
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }
