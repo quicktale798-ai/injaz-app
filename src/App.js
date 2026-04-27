@@ -1036,9 +1036,13 @@ function GoalsPage({ goals, setGoals, addNotif }) {
 // ============================================================
 // TASKS PAGE
 // ============================================================
-const EMPTY_TASK_FORM = { title: '', goalId: '', priority: 'medium', date: new Date().toISOString().split("T")[0], repeat: 'none', note: '' };
+const EMPTY_TASK_FORM = { title: '', goalId: '', priority: 'medium', date: new Date().toISOString().split("T")[0], repeat: 'none', note: '', time: '', weekDays: [] };
 
 const REPEAT_LABELS = { none: 'لا تكرار', daily: 'يومي', weekly: 'أسبوعي', monthly: 'شهري' };
+const WEEK_DAYS = [
+  { id: 0, label: 'أحد' }, { id: 1, label: 'اثنين' }, { id: 2, label: 'ثلاثاء' },
+  { id: 3, label: 'أربعاء' }, { id: 4, label: 'خميس' }, { id: 5, label: 'جمعة' }, { id: 6, label: 'سبت' }
+];
 
 function getNextRepeatDate(fromDate, repeat) {
   const d = new Date(fromDate + 'T00:00:00');
@@ -1049,6 +1053,11 @@ function getNextRepeatDate(fromDate, repeat) {
 }
 
 function TaskForm({ form, setForm, goals }) {
+  function toggleWeekDay(id) {
+    const days = form.weekDays || [];
+    const next = days.includes(id) ? days.filter(d => d !== id) : [...days, id];
+    setForm(p => ({ ...p, weekDays: next }));
+  }
   return (
     <>
       <div className="form-group">
@@ -1065,34 +1074,60 @@ function TaskForm({ form, setForm, goals }) {
           </select>
         </div>
         <div className="form-group">
-          <label className="form-label">التاريخ</label>
+          <label className="form-label">📅 التاريخ</label>
           <input type="date" className="form-input" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} />
         </div>
       </div>
       <div className="form-row">
         <div className="form-group">
+          <label className="form-label">⏰ وقت التذكير</label>
+          <input type="time" className="form-input" value={form.time || ''} onChange={e => setForm(p => ({ ...p, time: e.target.value }))} />
+        </div>
+        <div className="form-group">
           <label className="form-label">🔁 التكرار</label>
-          <select className="form-select" value={form.repeat || 'none'} onChange={e => setForm(p => ({ ...p, repeat: e.target.value }))}>
+          <select className="form-select" value={form.repeat || 'none'} onChange={e => setForm(p => ({ ...p, repeat: e.target.value, weekDays: [] }))}>
             <option value="none">🚫 لا تكرار</option>
             <option value="daily">🔁 يومي</option>
-            <option value="weekly">📆 أسبوعي</option>
+            <option value="weekly">📆 أسبوعي — أيام محددة</option>
             <option value="monthly">🗓️ شهري</option>
           </select>
         </div>
-        <div className="form-group">
-          <label className="form-label">ربط بهدف (اختياري)</label>
-          <select className="form-select" value={form.goalId} onChange={e => setForm(p => ({ ...p, goalId: e.target.value }))}>
-            <option value="">-- بدون هدف --</option>
-            {goals.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}
-          </select>
-        </div>
       </div>
+
+      {/* Weekly days selector */}
+      {form.repeat === 'weekly' && (
+        <div className="form-group">
+          <label className="form-label">📆 اختر أيام الأسبوع</label>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {WEEK_DAYS.map(d => {
+              const selected = (form.weekDays || []).includes(d.id);
+              return (
+                <div key={d.id} onClick={() => toggleWeekDay(d.id)} style={{ padding: '6px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`, background: selected ? 'var(--accent)' : 'var(--bg3)', color: selected ? 'white' : 'var(--text2)', transition: 'all 0.2s' }}>
+                  {d.label}
+                </div>
+              );
+            })}
+          </div>
+          {(form.weekDays || []).length === 0 && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>اختر يوماً واحداً على الأقل</div>}
+        </div>
+      )}
+
+      <div className="form-group">
+        <label className="form-label">ربط بهدف (اختياري)</label>
+        <select className="form-select" value={form.goalId} onChange={e => setForm(p => ({ ...p, goalId: e.target.value }))}>
+          <option value="">-- بدون هدف --</option>
+          {goals.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}
+        </select>
+      </div>
+
       {form.repeat && form.repeat !== 'none' && (
         <div style={{ background: 'rgba(124,110,240,0.08)', border: '1px solid rgba(124,110,240,0.2)', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: 'var(--accent2)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span>✨</span>
           <span>عند الإكمال ستُجدَّد تلقائياً ({REPEAT_LABELS[form.repeat]})</span>
+          {form.time && <span>• تذكير {form.time} 🔔</span>}
         </div>
       )}
+
       <div className="form-group">
         <label className="form-label">📝 ملاحظات (اختياري)</label>
         <textarea className="form-textarea" placeholder="أضف ملاحظاتك..." value={form.note || ''} onChange={e => setForm(p => ({ ...p, note: e.target.value }))} style={{ minHeight: 64 }} />
@@ -1117,10 +1152,12 @@ function TasksPage({ tasks, setTasks, goals, setGoals, addNotif }) {
       title: addForm.title, priority: addForm.priority,
       date: addForm.date, done: false, completed_at: null,
       repeat: addForm.repeat || 'none', goal_id: goalId,
-      note: addForm.note || null
+      note: addForm.note || null,
+      time: addForm.time || null,
+      week_days: addForm.weekDays?.length ? addForm.weekDays : null
     }).select().single();
     if (data) {
-      setTasks(prev => [...prev, { ...data, completedAt: null, goalId: data.goal_id, note: data.note }]);
+      setTasks(prev => [...prev, { ...data, completedAt: null, goalId: data.goal_id, note: data.note, time: data.time, weekDays: data.week_days }]);
       addNotif({ type: 'success', icon: '✅', title: 'تم إضافة المهمة', msg: data.title });
     } else { addNotif({ type: 'warning', icon: '⚠️', title: 'خطأ', msg: error?.message }); }
     setShowAdd(false);
@@ -1128,7 +1165,7 @@ function TasksPage({ tasks, setTasks, goals, setGoals, addNotif }) {
   }
 
   function openEdit(t) {
-    setEditForm({ title: t.title, goalId: t.goalId ? String(t.goalId) : '', priority: t.priority, date: t.date, repeat: t.repeat || 'none', note: t.note || '' });
+    setEditForm({ title: t.title, goalId: t.goalId ? String(t.goalId) : '', priority: t.priority, date: t.date, repeat: t.repeat || 'none', note: t.note || '', time: t.time || '', weekDays: t.weekDays || t.week_days || [] });
     setEditTask(t);
   }
 
@@ -1137,9 +1174,11 @@ function TasksPage({ tasks, setTasks, goals, setGoals, addNotif }) {
     await supabase.from('tasks').update({
       title: editForm.title, priority: editForm.priority,
       date: editForm.date, repeat: editForm.repeat || 'none',
-      goal_id: editForm.goalId || null, note: editForm.note || null
+      goal_id: editForm.goalId || null, note: editForm.note || null,
+      time: editForm.time || null,
+      week_days: editForm.weekDays?.length ? editForm.weekDays : null
     }).eq('id', editTask.id);
-    setTasks(prev => prev.map(t => t.id === editTask.id ? { ...t, ...editForm, repeat: editForm.repeat || 'none', goalId: editForm.goalId || null } : t));
+    setTasks(prev => prev.map(t => t.id === editTask.id ? { ...t, ...editForm, repeat: editForm.repeat || 'none', goalId: editForm.goalId || null, weekDays: editForm.weekDays } : t));
     addNotif({ type: 'info', icon: '✏️', title: 'تم تعديل المهمة', msg: editForm.title });
     setEditTask(null);
   }
@@ -1181,18 +1220,44 @@ function TasksPage({ tasks, setTasks, goals, setGoals, addNotif }) {
 
       // Handle repeat
       if (task.repeat && task.repeat !== 'none') {
-        const nextDate = getNextRepeatDate(task.date, task.repeat);
-        const exists = updatedTasks.some(t => t.date === nextDate && t.title === task.title && !t.done);
-        if (!exists) {
-          const uid = (await supabase.auth.getUser()).data.user?.id;
-          const { data: next } = await supabase.from('tasks').insert({
-            user_id: uid, title: task.title, priority: task.priority,
-            date: nextDate, done: false, completed_at: null, repeat: task.repeat,
-            goal_id: task.goalId || task.goal_id || null
-          }).select().single();
-          if (next) {
-            setTasks(prev => [...prev, { ...next, completedAt: null, goalId: next.goal_id }]);
-            addNotif({ type: 'info', icon: '🔁', title: 'تم جدولة التكرار', msg: `${task.title} ← ${nextDate}` });
+        const uid = (await supabase.auth.getUser()).data.user?.id;
+        if (task.repeat === 'weekly' && task.weekDays?.length) {
+          // Generate next occurrence for each selected day
+          const today2 = new Date(task.date + 'T00:00:00');
+          const nextDates = [];
+          for (let i = 1; i <= 7; i++) {
+            const d = new Date(today2); d.setDate(d.getDate() + i);
+            if (task.weekDays.includes(d.getDay())) nextDates.push(d.toISOString().split('T')[0]);
+          }
+          for (const nextDate of nextDates) {
+            const exists = updatedTasks.some(t => t.date === nextDate && t.title === task.title && !t.done);
+            if (!exists) {
+              const { data: next } = await supabase.from('tasks').insert({
+                user_id: uid, title: task.title, priority: task.priority,
+                date: nextDate, done: false, completed_at: null, repeat: task.repeat,
+                goal_id: task.goalId || task.goal_id || null,
+                time: task.time || null, week_days: task.weekDays,
+                note: task.note || null
+              }).select().single();
+              if (next) setTasks(prev => [...prev, { ...next, completedAt: null, goalId: next.goal_id, weekDays: next.week_days }]);
+            }
+          }
+          addNotif({ type: 'info', icon: '🔁', title: 'تم جدولة التكرار الأسبوعي', msg: task.title });
+        } else {
+          const nextDate = getNextRepeatDate(task.date, task.repeat);
+          const exists = updatedTasks.some(t => t.date === nextDate && t.title === task.title && !t.done);
+          if (!exists) {
+            const { data: next } = await supabase.from('tasks').insert({
+              user_id: uid, title: task.title, priority: task.priority,
+              date: nextDate, done: false, completed_at: null, repeat: task.repeat,
+              goal_id: task.goalId || task.goal_id || null,
+              time: task.time || null, week_days: task.weekDays || null,
+              note: task.note || null
+            }).select().single();
+            if (next) {
+              setTasks(prev => [...prev, { ...next, completedAt: null, goalId: next.goal_id, weekDays: next.week_days }]);
+              addNotif({ type: 'info', icon: '🔁', title: 'تم جدولة التكرار', msg: `${task.title} ← ${nextDate}` });
+            }
           }
         }
       }
@@ -1250,9 +1315,10 @@ function TasksPage({ tasks, setTasks, goals, setGoals, addNotif }) {
                 <span className={`badge ${t.priority}`}>{t.priority === 'high' ? '🔴 عالية' : t.priority === 'medium' ? '🟡 متوسطة' : '🔵 منخفضة'}</span>
                 {goal && <span className="badge goal" style={{ background: `${goal.color}20`, color: goal.color }}>🎯 {goal.title}</span>}
                 <span className="task-time">📅 {t.date}</span>
+                {t.time && <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: 'var(--amber)', fontWeight: 600 }}>⏰ {t.time}</span>}
                 {t.repeat && t.repeat !== 'none' && (
                   <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, background: 'rgba(124,110,240,0.15)', color: 'var(--accent2)', fontWeight: 600 }}>
-                    {t.repeat === 'daily' ? '🔁 يومي' : t.repeat === 'weekly' ? '📆 أسبوعي' : '🗓️ شهري'}
+                    {t.repeat === 'daily' ? '🔁 يومي' : t.repeat === 'weekly' ? `📆 ${(t.weekDays||[]).map(d=>['أحد','اثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت'][d]).join('،')}` : '🗓️ شهري'}
                   </span>
                 )}
                 {t.completedAt && <span className="task-time" style={{ color: 'var(--green)' }}>✓ {t.completedAt}</span>}
@@ -1741,17 +1807,66 @@ export default function App() {
     else { setGoalsState([]); setTasksState([]); }
   }, [user]);
 
-  // Daily reset: reset goal progress that came from daily tasks at midnight
+  // Daily reset tracking
   useEffect(() => {
     if (!user) return;
-    const lastReset = localStorage.getItem('injaz-last-reset');
     const today = new Date().toISOString().split('T')[0];
-    if (lastReset !== today) {
-      localStorage.setItem('injaz-last-reset', today);
-      // Mark: new day started — goals keep their progress (manual reset only)
-      // But daily tasks that were done yesterday show as pending today
-    }
+    localStorage.setItem('injaz-last-reset', today);
   }, [user]);
+
+  // Browser notification system — checks every minute
+  useEffect(() => {
+    if (!user) return;
+
+    // Request permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
+    function checkNotifications() {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      const currentTime = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+
+      tasks.forEach(t => {
+        if (t.done) return;
+        if (t.date !== today) return;
+        if (!t.time) return;
+        // Notify at exact time
+        if (t.time === currentTime) {
+          const notifKey = `notif-${t.id}-${today}-${currentTime}`;
+          if (!localStorage.getItem(notifKey)) {
+            localStorage.setItem(notifKey, '1');
+            new Notification('⏰ تذكير إنجاز', {
+              body: t.title,
+              icon: '/favicon.ico',
+              badge: '/favicon.ico',
+              tag: notifKey,
+            });
+          }
+        }
+        // 5-min warning
+        const taskTime = new Date(`${today}T${t.time}`);
+        const warnTime = new Date(taskTime.getTime() - 5 * 60000);
+        const warnHH = warnTime.getHours().toString().padStart(2,'0');
+        const warnMM = warnTime.getMinutes().toString().padStart(2,'0');
+        const warnKey = `warn-${t.id}-${today}-${warnHH}:${warnMM}`;
+        if (`${warnHH}:${warnMM}` === currentTime && !localStorage.getItem(warnKey)) {
+          localStorage.setItem(warnKey, '1');
+          new Notification('🔔 تذكير — بعد 5 دقائق', {
+            body: t.title,
+            icon: '/favicon.ico',
+            tag: warnKey,
+          });
+        }
+      });
+    }
+
+    const interval = setInterval(checkNotifications, 60000);
+    checkNotifications(); // Run immediately
+    return () => clearInterval(interval);
+  }, [user, tasks]);
 
   async function loadData(uid) {
     setDbLoading(true);
@@ -1765,7 +1880,7 @@ export default function App() {
         supabase.from('tasks').select('*').eq('user_id', uid).order('created_at'),
       ]);
       if (goalsData) setGoalsState(goalsData.map(g => ({ ...g, subtasks: g.subtasks || [] })));
-      if (tasksData) setTasksState(tasksData.map(t => ({ ...t, completedAt: t.completed_at, goalId: t.goal_id, note: t.note })));
+      if (tasksData) setTasksState(tasksData.map(t => ({ ...t, completedAt: t.completed_at, goalId: t.goal_id, note: t.note, time: t.time, weekDays: t.week_days || [] })));
     } catch(e) { console.error('loadData error', e); }
     setDbLoading(false);
     setDataLoaded(true);
