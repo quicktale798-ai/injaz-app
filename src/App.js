@@ -1621,8 +1621,11 @@ export default function App() {
   async function loadData(uid) {
     setDbLoading(true);
     setDataLoaded(false);
+    // Reset state first to avoid duplicates
+    setGoalsState([]);
+    setTasksState([]);
     try {
-      const [{ data: goalsData, error: ge }, { data: tasksData, error: te }] = await Promise.all([
+      const [{ data: goalsData }, { data: tasksData }] = await Promise.all([
         supabase.from('goals').select('*').eq('user_id', uid).order('created_at'),
         supabase.from('tasks').select('*').eq('user_id', uid).order('created_at'),
       ]);
@@ -1633,89 +1636,9 @@ export default function App() {
     setDataLoaded(true);
   }
 
-  // GOALS — direct DB operations
-  async function setGoals(updater) {
-    setGoalsState(prev => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      // Find added
-      const added = next.filter(n => !prev.find(p => p.id === n.id));
-      // Find removed
-      const removed = prev.filter(p => !next.find(n => n.id === p.id));
-      // Find changed
-      const changed = next.filter(n => {
-        const old = prev.find(p => p.id === n.id);
-        return old && JSON.stringify(old) !== JSON.stringify(n);
-      });
-      (async () => {
-        const uid = (await supabase.auth.getUser()).data.user?.id;
-        for (const g of added) {
-          const { data } = await supabase.from('goals').insert({
-            user_id: uid, title: g.title, category: g.category || '',
-            progress: g.progress || 0, status: g.status || 'active',
-            color: g.color || '#6366f1', start_date: g.startDate || g.start_date || '',
-            end_date: g.endDate || g.end_date || '', subtasks: g.subtasks || []
-          }).select().single();
-          if (data) setGoalsState(p => p.map(x => x.id === g.id ? { ...x, id: data.id } : x));
-        }
-        for (const g of removed) {
-          if (typeof g.id === 'string' && g.id.includes('-')) {
-            await supabase.from('goals').delete().eq('id', g.id);
-          }
-        }
-        for (const g of changed) {
-          if (typeof g.id === 'string' && g.id.includes('-')) {
-            await supabase.from('goals').update({
-              title: g.title, category: g.category, progress: g.progress,
-              status: g.status, color: g.color,
-              start_date: g.startDate || g.start_date,
-              end_date: g.endDate || g.end_date, subtasks: g.subtasks
-            }).eq('id', g.id);
-          }
-        }
-      })();
-      return next;
-    });
-  }
-
-  // TASKS — direct DB operations
-  async function setTasks(updater) {
-    setTasksState(prev => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      const added = next.filter(n => !prev.find(p => p.id === n.id));
-      const removed = prev.filter(p => !next.find(n => n.id === p.id));
-      const changed = next.filter(n => {
-        const old = prev.find(p => p.id === n.id);
-        return old && JSON.stringify(old) !== JSON.stringify(n);
-      });
-      (async () => {
-        const uid = (await supabase.auth.getUser()).data.user?.id;
-        for (const t of added) {
-          const { data } = await supabase.from('tasks').insert({
-            user_id: uid, title: t.title, priority: t.priority || 'medium',
-            date: t.date, done: t.done || false,
-            completed_at: t.completedAt || t.completed_at || null,
-            repeat: t.repeat || 'none', goal_id: null
-          }).select().single();
-          if (data) setTasksState(p => p.map(x => x.id === t.id ? { ...x, id: data.id } : x));
-        }
-        for (const t of removed) {
-          if (typeof t.id === 'string' && t.id.includes('-')) {
-            await supabase.from('tasks').delete().eq('id', t.id);
-          }
-        }
-        for (const t of changed) {
-          if (typeof t.id === 'string' && t.id.includes('-')) {
-            await supabase.from('tasks').update({
-              title: t.title, priority: t.priority, date: t.date,
-              done: t.done, completed_at: t.completedAt || t.completed_at || null,
-              repeat: t.repeat || 'none'
-            }).eq('id', t.id);
-          }
-        }
-      })();
-      return next;
-    });
-  }
+  // Simple state setters - all DB ops done directly in components
+  const setGoals = setGoalsState;
+  const setTasks = setTasksState;
 
   function addNotif(n) {
     const id = Date.now();
