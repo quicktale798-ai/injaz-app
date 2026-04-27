@@ -1711,6 +1711,34 @@ function AIPage({ tasks, goals, addNotif }) {
 }
 
 // ============================================================
+// PWA INSTALL BUTTON
+// ============================================================
+function InstallPWAButton() {
+  const [canInstall, setCanInstall] = useState(false);
+  const [installed, setInstalled] = useState(false);
+
+  useEffect(() => {
+    // Check if already installed
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setInstalled(true); return;
+    }
+    window.addEventListener('pwaInstallReady', () => setCanInstall(true));
+    return () => window.removeEventListener('pwaInstallReady', () => {});
+  }, []);
+
+  if (installed || !canInstall) return null;
+
+  return (
+    <button className="btn btn-primary btn-sm" onClick={async () => {
+      const ok = await window.installPWA?.();
+      if (ok) setInstalled(true);
+    }} style={{ gap: 6, fontSize: 12 }}>
+      📲 تثبيت التطبيق
+    </button>
+  );
+}
+
+// ============================================================
 // AUTH PAGE
 // ============================================================
 function AuthPage({ onAuth }) {
@@ -1833,32 +1861,29 @@ export default function App() {
         if (t.done) return;
         if (t.date !== today) return;
         if (!t.time) return;
+        function sendNotif(title, body, tag) {
+          const key = `done-${tag}`;
+          if (localStorage.getItem(key)) return;
+          localStorage.setItem(key, '1');
+          // Use SW if available for better delivery
+          if (navigator.serviceWorker?.controller) {
+            navigator.serviceWorker.controller.postMessage({ type: 'SHOW_NOTIFICATION', title, body, tag });
+          } else if (Notification.permission === 'granted') {
+            new Notification(title, { body, icon: '/icons/icon-192.png', tag, dir: 'rtl' });
+          }
+        }
+
         // Notify at exact time
         if (t.time === currentTime) {
-          const notifKey = `notif-${t.id}-${today}-${currentTime}`;
-          if (!localStorage.getItem(notifKey)) {
-            localStorage.setItem(notifKey, '1');
-            new Notification('⏰ تذكير إنجاز', {
-              body: t.title,
-              icon: '/favicon.ico',
-              badge: '/favicon.ico',
-              tag: notifKey,
-            });
-          }
+          sendNotif('⏰ حان وقت المهمة!', t.title, `notif-${t.id}-${today}-${currentTime}`);
         }
         // 5-min warning
         const taskTime = new Date(`${today}T${t.time}`);
         const warnTime = new Date(taskTime.getTime() - 5 * 60000);
         const warnHH = warnTime.getHours().toString().padStart(2,'0');
         const warnMM = warnTime.getMinutes().toString().padStart(2,'0');
-        const warnKey = `warn-${t.id}-${today}-${warnHH}:${warnMM}`;
-        if (`${warnHH}:${warnMM}` === currentTime && !localStorage.getItem(warnKey)) {
-          localStorage.setItem(warnKey, '1');
-          new Notification('🔔 تذكير — بعد 5 دقائق', {
-            body: t.title,
-            icon: '/favicon.ico',
-            tag: warnKey,
-          });
+        if (`${warnHH}:${warnMM}` === currentTime) {
+          sendNotif('🔔 تذكير — بعد 5 دقائق', t.title, `warn-${t.id}-${today}-${warnHH}:${warnMM}`);
         }
       });
     }
@@ -1983,6 +2008,7 @@ export default function App() {
             <div className="topbar-actions">
               <div className="btn-icon menu-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>☰</div>
               {dbLoading && <div className="spinner" style={{ width: 18, height: 18 }} />}
+              <InstallPWAButton />
               <div className="btn-icon" onClick={() => addNotif({ type: 'info', icon: '🔔', title: 'لا إشعارات جديدة' })}>🔔</div>
             </div>
           </div>
