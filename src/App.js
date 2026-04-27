@@ -575,12 +575,16 @@ function DashboardPage({ tasks, setTasks, goals, setGoals, pomodoroSessions, tod
   async function toggleSubtask(goalId, subId) {
     const goal = goals.find(g => g.id === goalId);
     if (!goal) return;
-    const updated = goal.subtasks.map(s => s.id === subId ? { ...s, done: !s.done } : s);
-    const progress = updated.length ? Math.round(updated.filter(s => s.done).length / updated.length * 100) : 0;
-    await supabase.from('goals').update({ subtasks: updated, progress }).eq('id', goalId);
-    setGoals(prev => prev.map(g => g.id === goalId ? { ...g, subtasks: updated, progress } : g));
     const sub = goal.subtasks.find(s => s.id === subId);
-    if (!sub.done) addNotif({ type: 'success', icon: '✅', title: 'أحسنت!', msg: sub.title });
+    if (!sub) return;
+    const isNowDone = !sub.done;
+    const updated = goal.subtasks.map(s => s.id === subId ? { ...s, done: isNowDone } : s);
+    const progress = updated.length ? Math.round(updated.filter(s => s.done).length / updated.length * 100) : 0;
+    // Update Supabase
+    await supabase.from('goals').update({ subtasks: updated, progress }).eq('id', goalId);
+    // Update local state immediately so progress bar animates
+    setGoals(prev => prev.map(g => g.id === goalId ? { ...g, subtasks: updated, progress } : g));
+    if (isNowDone) addNotif({ type: 'success', icon: '✅', title: 'أحسنت! تقدم الهدف: ' + progress + '%', msg: sub.title });
   }
 
   function openSubtaskEdit(goalId, sub) {
