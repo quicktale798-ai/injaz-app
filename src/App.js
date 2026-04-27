@@ -550,12 +550,16 @@ function ProgressBar({ pct, color = "var(--accent)", h = 6 }) {
 // ============================================================
 // DASHBOARD PAGE
 // ============================================================
-function DashboardPage({ tasks, setTasks, goals, pomodoroSessions, todayFocus, addNotif }) {
+function DashboardPage({ tasks, setTasks, goals, setGoals, pomodoroSessions, todayFocus, addNotif }) {
   const today = new Date().toISOString().split("T")[0];
   const todayTasks = tasks.filter(t => t.date === today);
   const doneTasks = todayTasks.filter(t => t.done);
   const pct = todayTasks.length ? Math.round((doneTasks.length / todayTasks.length) * 100) : 0;
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
+  const [expandedGoal, setExpandedGoal] = useState(null);
+  const [editingSubtask, setEditingSubtask] = useState(null); // { goalId, subId }
+  const [subtaskNote, setSubtaskNote] = useState('');
+  const [subtaskTime, setSubtaskTime] = useState('');
 
   async function toggleTask(id) {
     const task = tasks.find(t => t.id === id);
@@ -567,6 +571,35 @@ function DashboardPage({ tasks, setTasks, goals, pomodoroSessions, todayFocus, a
     setTasks(prev => prev.map(t => t.id === id ? { ...t, done, completedAt } : t));
     if (done) addNotif({ type: 'success', icon: '🎉', title: 'أحسنت! 🌟', msg: `أكملت: ${task.title}` });
   }
+
+  async function toggleSubtask(goalId, subId) {
+    const goal = goals.find(g => g.id === goalId);
+    if (!goal) return;
+    const updated = goal.subtasks.map(s => s.id === subId ? { ...s, done: !s.done } : s);
+    const progress = updated.length ? Math.round(updated.filter(s => s.done).length / updated.length * 100) : 0;
+    await supabase.from('goals').update({ subtasks: updated, progress }).eq('id', goalId);
+    setGoals(prev => prev.map(g => g.id === goalId ? { ...g, subtasks: updated, progress } : g));
+    const sub = goal.subtasks.find(s => s.id === subId);
+    if (!sub.done) addNotif({ type: 'success', icon: '✅', title: 'أحسنت!', msg: sub.title });
+  }
+
+  function openSubtaskEdit(goalId, sub) {
+    setEditingSubtask({ goalId, subId: sub.id });
+    setSubtaskNote(sub.note || '');
+    setSubtaskTime(sub.dueTime || '');
+  }
+
+  async function saveSubtaskDetails(goalId, subId) {
+    const goal = goals.find(g => g.id === goalId);
+    if (!goal) return;
+    const updated = goal.subtasks.map(s => s.id === subId ? { ...s, note: subtaskNote, dueTime: subtaskTime } : s);
+    await supabase.from('goals').update({ subtasks: updated }).eq('id', goalId);
+    setGoals(prev => prev.map(g => g.id === goalId ? { ...g, subtasks: updated } : g));
+    setEditingSubtask(null);
+    addNotif({ type: 'info', icon: '📝', title: 'تم حفظ الملاحظة' });
+  }
+
+  const activeGoals = goals.filter(g => g.status === 'active');
 
   return (
     <div className="page">
@@ -629,28 +662,12 @@ function DashboardPage({ tasks, setTasks, goals, pomodoroSessions, todayFocus, a
             {todayTasks.length === 0 ? (
               <div className="empty"><div className="empty-icon">🌟</div><div className="empty-text">لا مهام اليوم. أضف مهمتك الأولى!</div></div>
             ) : todayTasks.map(t => (
-              <div
-                key={t.id}
-                className={`task-item ${t.done ? 'done' : ''}`}
-                style={{ cursor: 'default' }}
-              >
-                {/* Clickable checkbox */}
-                <div
-                  className={`task-check ${t.done ? 'done' : t.priority}`}
-                  onClick={() => toggleTask(t.id)}
-                  style={{ cursor: 'pointer', flexShrink: 0 }}
-                  title={t.done ? 'إلغاء الإكمال' : 'إكمال المهمة'}
-                >
+              <div key={t.id} className={`task-item ${t.done ? 'done' : ''}`} style={{ cursor: 'default' }}>
+                <div className={`task-check ${t.done ? 'done' : t.priority}`} onClick={() => toggleTask(t.id)} style={{ cursor: 'pointer', flexShrink: 0 }} title={t.done ? 'إلغاء الإكمال' : 'إكمال المهمة'}>
                   {t.done ? '✓' : ''}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    className={`task-title ${t.done ? 'done' : ''}`}
-                    onClick={() => toggleTask(t.id)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    {t.title}
-                  </div>
+                  <div className={`task-title ${t.done ? 'done' : ''}`} onClick={() => toggleTask(t.id)} style={{ cursor: 'pointer' }}>{t.title}</div>
                   <div className="task-meta">
                     <span className={`badge ${t.priority}`}>{t.priority === 'high' ? '🔴 عالية' : t.priority === 'medium' ? '🟡 متوسطة' : '🔵 منخفضة'}</span>
                     {t.repeat && t.repeat !== 'none' && (
@@ -669,13 +686,73 @@ function DashboardPage({ tasks, setTasks, goals, pomodoroSessions, todayFocus, a
         {/* Active Goals */}
         <div className="card">
           <div className="section-title mb-16"><span className="section-icon">🎯</span>الأهداف النشطة</div>
-          {goals.filter(g => g.status === 'active').map(g => (
-            <div key={g.id} style={{ marginBottom: 16 }}>
-              <div className="flex justify-between items-center mb-8">
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{g.title}</span>
-                <span style={{ fontSize: 12, color: g.color, fontWeight: 700 }}>{g.progress}%</span>
+          {activeGoals.length === 0 && <div className="empty" style={{ padding: '20px 0' }}><div className="empty-icon" style={{ fontSize: 28 }}>🎯</div><div className="empty-text">لا أهداف نشطة</div></div>}
+          {activeGoals.map(g => (
+            <div key={g.id} style={{ marginBottom: 12, background: 'var(--bg3)', borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden' }}>
+              {/* Goal header */}
+              <div style={{ padding: '12px 14px', cursor: 'pointer' }} onClick={() => setExpandedGoal(expandedGoal === g.id ? null : g.id)}>
+                <div className="flex justify-between items-center mb-8">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: g.color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{g.title}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: g.color, fontWeight: 700 }}>{g.progress}%</span>
+                    <span style={{ fontSize: 11, color: 'var(--text3)' }}>{expandedGoal === g.id ? '▲' : '▼'}</span>
+                  </div>
+                </div>
+                <ProgressBar pct={g.progress} color={g.color} h={5} />
               </div>
-              <ProgressBar pct={g.progress} color={g.color} />
+
+              {/* Subtasks expanded */}
+              {expandedGoal === g.id && (
+                <div style={{ borderTop: '1px solid var(--border)', padding: '8px 14px 12px' }}>
+                  {(!g.subtasks || g.subtasks.length === 0) && (
+                    <div style={{ fontSize: 12, color: 'var(--text3)', padding: '8px 0', textAlign: 'center' }}>لا مهام فرعية — أضفها من صفحة الأهداف</div>
+                  )}
+                  {(g.subtasks || []).map(s => (
+                    <div key={s.id} style={{ marginBottom: 8 }}>
+                      {/* Subtask row */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, background: s.done ? 'rgba(16,185,129,0.06)' : 'var(--bg4)', border: `1px solid ${s.done ? 'rgba(16,185,129,0.2)' : 'var(--border)'}`, transition: 'all 0.2s' }}>
+                        {/* Check */}
+                        <div onClick={() => toggleSubtask(g.id, s.id)} style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${s.done ? 'var(--green)' : g.color}`, background: s.done ? 'var(--green)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, fontSize: 11, color: 'white', transition: 'all 0.2s' }}>
+                          {s.done ? '✓' : ''}
+                        </div>
+                        {/* Title */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, textDecoration: s.done ? 'line-through' : 'none', color: s.done ? 'var(--text3)' : 'var(--text)' }}>{s.title}</div>
+                          <div style={{ display: 'flex', gap: 8, marginTop: 3, flexWrap: 'wrap' }}>
+                            {s.dueTime && <span style={{ fontSize: 10, color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: 3 }}>⏰ {s.dueTime}</span>}
+                            {s.note && <span style={{ fontSize: 10, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 3 }}>📝 {s.note.slice(0, 30)}{s.note.length > 30 ? '...' : ''}</span>}
+                          </div>
+                        </div>
+                        {/* Edit button */}
+                        <button onClick={() => editingSubtask?.subId === s.id ? setEditingSubtask(null) : openSubtaskEdit(g.id, s)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: 'var(--text3)', padding: '2px 4px', flexShrink: 0 }} title="تعديل">✏️</button>
+                      </div>
+
+                      {/* Edit panel */}
+                      {editingSubtask?.goalId === g.id && editingSubtask?.subId === s.id && (
+                        <div style={{ margin: '6px 0 4px', padding: '12px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border2)' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 4 }}>⏰ وقت الإنجاز</div>
+                              <input type="time" className="form-input" style={{ padding: '6px 10px', fontSize: 13 }} value={subtaskTime} onChange={e => setSubtaskTime(e.target.value)} />
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
+                              <button className="btn btn-primary btn-sm" onClick={() => saveSubtaskDetails(g.id, s.id)} style={{ flex: 1, justifyContent: 'center' }}>حفظ ✅</button>
+                              <button className="btn btn-ghost btn-sm" onClick={() => setEditingSubtask(null)}>إلغاء</button>
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 4 }}>📝 ملاحظات</div>
+                            <textarea className="form-textarea" style={{ minHeight: 60, fontSize: 13, resize: 'none' }} placeholder="أضف ملاحظاتك هنا..." value={subtaskNote} onChange={e => setSubtaskNote(e.target.value)} />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -1737,7 +1814,7 @@ export default function App() {
             </div>
           </div>
 
-          {page === 'dashboard' && <DashboardPage tasks={tasks} setTasks={setTasks} goals={goals} pomodoroSessions={pomodoroSessions} todayFocus={todayFocus} addNotif={addNotif} />}
+          {page === 'dashboard' && <DashboardPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} pomodoroSessions={pomodoroSessions} todayFocus={todayFocus} addNotif={addNotif} />}
           {page === 'goals' && <GoalsPage goals={goals} setGoals={setGoals} addNotif={addNotif} />}
           {page === 'tasks' && <TasksPage tasks={tasks} setTasks={setTasks} goals={goals} addNotif={addNotif} />}
           {page === 'pomodoro' && <PomodoroPage onSession={onPomodoroSession} addNotif={addNotif} />}
