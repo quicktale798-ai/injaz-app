@@ -669,7 +669,7 @@ function DashboardPage({ tasks, setTasks, goals, setGoals, pomodoroSessions, tod
       </div>
 
       <div className="grid-3">
-        {/* Today Tasks */}
+        {/* Today Tasks — Full Details */}
         <div className="card">
           <div className="section-header">
             <div className="section-title"><span className="section-icon">📋</span>مهام اليوم</div>
@@ -686,28 +686,108 @@ function DashboardPage({ tasks, setTasks, goals, setGoals, pomodoroSessions, tod
               <div className="today-ring-pct">{pct}%</div>
             </div>
           </div>
-          <div className="scroll-area">
+
+          {/* Sort: pending first by priority, then done */}
+          <div className="scroll-area" style={{ maxHeight: 480 }}>
             {todayTasks.length === 0 ? (
               <div className="empty"><div className="empty-icon">🌟</div><div className="empty-text">لا مهام اليوم. أضف مهمتك الأولى!</div></div>
-            ) : todayTasks.map(t => (
-              <div key={t.id} className={`task-item ${t.done ? 'done' : ''}`} style={{ cursor: 'default' }}>
-                <div className={`task-check ${t.done ? 'done' : t.priority}`} onClick={() => toggleTask(t.id)} style={{ cursor: 'pointer', flexShrink: 0 }} title={t.done ? 'إلغاء الإكمال' : 'إكمال المهمة'}>
-                  {t.done ? '✓' : ''}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className={`task-title ${t.done ? 'done' : ''}`} onClick={() => toggleTask(t.id)} style={{ cursor: 'pointer' }}>{t.title}</div>
-                  <div className="task-meta">
-                    <span className={`badge ${t.priority}`}>{t.priority === 'high' ? '🔴 عالية' : t.priority === 'medium' ? '🟡 متوسطة' : '🔵 منخفضة'}</span>
-                    {t.repeat && t.repeat !== 'none' && (
-                      <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, background: 'rgba(124,110,240,0.15)', color: 'var(--accent2)', fontWeight: 600 }}>
-                        {t.repeat === 'daily' ? '🔁 يومي' : t.repeat === 'weekly' ? '📆 أسبوعي' : '🗓️ شهري'}
-                      </span>
-                    )}
-                    {t.completedAt && <span className="task-time" style={{ color: 'var(--green)' }}>✓ {t.completedAt}</span>}
+            ) : [...todayTasks]
+              .sort((a,b) => {
+                if (a.done !== b.done) return a.done ? 1 : -1;
+                const p = { high:0, medium:1, low:2 };
+                return (p[a.priority]||1) - (p[b.priority]||1);
+              })
+              .map(t => {
+                const linkedGoal = goals.find(g => String(g.id) === String(t.goalId || t.goal_id));
+                const isOverdue = !t.done && t.time && new Date(`${today}T${t.time}:00`) < new Date();
+                return (
+                  <div key={t.id} style={{
+                    background: t.done ? 'rgba(16,185,129,0.04)' : isOverdue ? 'rgba(239,68,68,0.04)' : 'var(--bg3)',
+                    border: `1px solid ${t.done ? 'rgba(16,185,129,0.15)' : isOverdue ? 'rgba(239,68,68,0.2)' : 'var(--border)'}`,
+                    borderRadius: 14, padding: '14px 16px', marginBottom: 10,
+                    transition: 'all 0.2s', opacity: t.done ? 0.75 : 1,
+                    borderRight: `4px solid ${t.priority === 'high' ? 'var(--red)' : t.priority === 'medium' ? 'var(--amber)' : 'var(--blue)'}`,
+                  }}>
+                    {/* Row 1: Checkbox + Title + Time */}
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                      {/* Checkbox */}
+                      <div onClick={() => toggleTask(t.id)} style={{
+                        width: 22, height: 22, borderRadius: 7, flexShrink: 0, marginTop: 1,
+                        border: `2px solid ${t.done ? 'var(--green)' : t.priority === 'high' ? 'var(--red)' : t.priority === 'medium' ? 'var(--amber)' : 'var(--blue)'}`,
+                        background: t.done ? 'var(--green)' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: 'pointer', color: 'white', fontSize: 12, fontWeight: 700,
+                        transition: 'all 0.2s',
+                      }}>{t.done ? '✓' : ''}</div>
+
+                      {/* Content */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        {/* Title + time badge */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                          <div onClick={() => toggleTask(t.id)} style={{
+                            fontSize: 14, fontWeight: 600, cursor: 'pointer', flex: 1,
+                            textDecoration: t.done ? 'line-through' : 'none',
+                            color: t.done ? 'var(--text3)' : 'var(--text)',
+                          }}>{t.title}</div>
+                          {t.time && (
+                            <span style={{
+                              fontSize: 11, padding: '2px 8px', borderRadius: 20, flexShrink: 0,
+                              background: isOverdue && !t.done ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
+                              color: isOverdue && !t.done ? 'var(--red)' : 'var(--amber)', fontWeight: 700,
+                            }}>⏰ {t.time}{isOverdue && !t.done ? ' ⚠️' : ''}</span>
+                          )}
+                        </div>
+
+                        {/* Row 2: Badges */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
+                          {/* Priority */}
+                          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, fontWeight: 600,
+                            background: t.priority === 'high' ? 'rgba(239,68,68,0.12)' : t.priority === 'medium' ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)',
+                            color: t.priority === 'high' ? 'var(--red)' : t.priority === 'medium' ? 'var(--amber)' : 'var(--blue)',
+                          }}>{t.priority === 'high' ? '🔴 عالية' : t.priority === 'medium' ? '🟡 متوسطة' : '🔵 منخفضة'}</span>
+
+                          {/* Linked goal */}
+                          {linkedGoal && (
+                            <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, fontWeight: 600,
+                              background: `${linkedGoal.color}18`, color: linkedGoal.color,
+                            }}>🎯 {linkedGoal.title}</span>
+                          )}
+
+                          {/* Repeat */}
+                          {t.repeat && t.repeat !== 'none' && (
+                            <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20,
+                              background: 'rgba(124,110,240,0.12)', color: 'var(--accent2)', fontWeight: 600,
+                            }}>
+                              {t.repeat === 'daily' ? '🔁 يومي'
+                                : t.repeat === 'weekly' && t.weekDays?.length
+                                  ? `📆 ${(t.weekDays||[]).map(d=>['أحد','اثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت'][d]).join('،')}`
+                                  : '🗓️ شهري'}
+                            </span>
+                          )}
+
+                          {/* Completed time */}
+                          {t.done && t.completedAt && (
+                            <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20,
+                              background: 'rgba(16,185,129,0.12)', color: 'var(--green)', fontWeight: 600,
+                            }}>✅ أُنجز {t.completedAt}</span>
+                          )}
+                        </div>
+
+                        {/* Row 3: Note */}
+                        {t.note && (
+                          <div style={{
+                            marginTop: 8, padding: '7px 10px',
+                            background: 'var(--bg4)', borderRadius: 8,
+                            borderRight: '2px solid var(--accent3)',
+                            fontSize: 12, color: 'var(--text2)', lineHeight: 1.6,
+                          }}>📝 {t.note}</div>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            ))}
+                );
+              })
+            }
           </div>
         </div>
 
