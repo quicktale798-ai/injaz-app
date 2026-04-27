@@ -460,6 +460,8 @@ const styles = `
     .sidebar.open { transform: translateX(0); }
     .main { margin-right: 0; }
     .grid-2, .grid-3 { grid-template-columns: 1fr; }
+.grid-3 { grid-template-columns: 1fr !important; }
+.grid-2 { grid-template-columns: 1fr !important; }
     .stats-grid { grid-template-columns: repeat(2, 1fr); }
     .page { padding: 16px; }
     .form-row { grid-template-columns: 1fr; }
@@ -574,7 +576,65 @@ function ProgressBar({ pct, color = "var(--accent)", h = 6 }) {
 // ============================================================
 // DASHBOARD PAGE
 // ============================================================
-function DashboardPage({ tasks, setTasks, goals, setGoals, pomodoroSessions, todayFocus, addNotif }) {
+const PRAYERS = [
+  { id: 'fajr',    name: 'الفجر',  icon: '🌙' },
+  { id: 'dhuhr',   name: 'الظهر',  icon: '☀️' },
+  { id: 'asr',     name: 'العصر',  icon: '🌤️' },
+  { id: 'maghrib', name: 'المغرب', icon: '🌅' },
+  { id: 'isha',    name: 'العشاء', icon: '🌃' },
+];
+
+function PrayerTracker() {
+  const today = new Date().toISOString().split('T')[0];
+  const key = `prayers-${today}`;
+  const [checked, setChecked] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(key)) || []; } catch { return []; }
+  });
+
+  function toggle(id) {
+    setChecked(prev => {
+      const next = prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id];
+      localStorage.setItem(key, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 20 }}>
+      <div className="section-header mb-16">
+        <div className="section-title"><span>🕌</span> الصلوات الخمس</div>
+        <span style={{ fontSize: 12, color: checked.length === 5 ? 'var(--green)' : 'var(--text2)', fontWeight: 600 }}>
+          {checked.length}/5 {checked.length === 5 ? '✅ أكملت صلواتك' : ''}
+        </span>
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        {PRAYERS.map(p => {
+          const done = checked.includes(p.id);
+          return (
+            <div key={p.id} onClick={() => toggle(p.id)} style={{
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+              gap: 6, padding: '12px 4px', borderRadius: 12, cursor: 'pointer',
+              transition: 'all 0.2s',
+              background: done ? 'rgba(124,110,240,0.2)' : 'var(--bg3)',
+              border: `1px solid ${done ? 'rgba(124,110,240,0.4)' : 'var(--border)'}`,
+              transform: done ? 'translateY(-2px)' : 'none',
+            }}>
+              <span style={{ fontSize: 22 }}>{done ? '✅' : p.icon}</span>
+              <span style={{ fontSize: 10, fontWeight: 600, color: done ? 'var(--accent2)' : 'var(--text2)' }}>
+                {p.name}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {checked.length === 5 && (
+        <div style={{ textAlign: 'center', marginTop: 10, fontSize: 12, color: 'var(--green)', fontWeight: 600 }}>
+          🌟 ماشاء الله — أكملت صلواتك اليوم!
+        </div>
+      )}
+    </div>
+  );
+}function DashboardPage({ tasks, setTasks, goals, setGoals, pomodoroSessions, todayFocus, addNotif }) {
   const today = new Date().toISOString().split("T")[0];
   const todayTasks = tasks.filter(t => t.date === today);
   const doneTasks = todayTasks.filter(t => t.done);
@@ -637,7 +697,7 @@ function DashboardPage({ tasks, setTasks, goals, setGoals, pomodoroSessions, tod
         <div className="quote-text">{quote}</div>
         <div className="quote-label">✨ اقتباس اليوم</div>
       </div>
-
+<PrayerTracker />
       {/* Stats */}
       <div className="stats-grid">
         <div className="stat-card purple">
