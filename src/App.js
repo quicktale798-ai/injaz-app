@@ -1022,7 +1022,7 @@ function GoalsPage({ goals, setGoals, addNotif }) {
 // ============================================================
 // TASKS PAGE
 // ============================================================
-const EMPTY_TASK_FORM = { title: '', goalId: '', priority: 'medium', date: new Date().toISOString().split("T")[0], repeat: 'none' };
+const EMPTY_TASK_FORM = { title: '', goalId: '', priority: 'medium', date: new Date().toISOString().split("T")[0], repeat: 'none', note: '' };
 
 const REPEAT_LABELS = { none: 'لا تكرار', daily: 'يومي', weekly: 'أسبوعي', monthly: 'شهري' };
 
@@ -1079,11 +1079,15 @@ function TaskForm({ form, setForm, goals }) {
           <span>عند الإكمال ستُجدَّد تلقائياً ({REPEAT_LABELS[form.repeat]})</span>
         </div>
       )}
+      <div className="form-group">
+        <label className="form-label">📝 ملاحظات (اختياري)</label>
+        <textarea className="form-textarea" placeholder="أضف ملاحظاتك..." value={form.note || ''} onChange={e => setForm(p => ({ ...p, note: e.target.value }))} style={{ minHeight: 64 }} />
+      </div>
     </>
   );
 }
 
-function TasksPage({ tasks, setTasks, goals, addNotif }) {
+function TasksPage({ tasks, setTasks, goals, setGoals, addNotif }) {
   const [showAdd, setShowAdd] = useState(false);
   const [editTask, setEditTask] = useState(null);
   const [deleteTask, setDeleteTask] = useState(null);
@@ -1093,14 +1097,16 @@ function TasksPage({ tasks, setTasks, goals, addNotif }) {
 
   async function addTask() {
     if (!addForm.title.trim()) return;
+    const goalId = addForm.goalId || null;
     const { data, error } = await supabase.from('tasks').insert({
       user_id: (await supabase.auth.getUser()).data.user?.id,
       title: addForm.title, priority: addForm.priority,
       date: addForm.date, done: false, completed_at: null,
-      repeat: addForm.repeat || 'none', goal_id: null
+      repeat: addForm.repeat || 'none', goal_id: goalId,
+      note: addForm.note || null
     }).select().single();
     if (data) {
-      setTasks(prev => [...prev, { ...data, completedAt: null, goalId: null }]);
+      setTasks(prev => [...prev, { ...data, completedAt: null, goalId: data.goal_id, note: data.note }]);
       addNotif({ type: 'success', icon: '✅', title: 'تم إضافة المهمة', msg: data.title });
     } else { addNotif({ type: 'warning', icon: '⚠️', title: 'خطأ', msg: error?.message }); }
     setShowAdd(false);
@@ -1108,7 +1114,7 @@ function TasksPage({ tasks, setTasks, goals, addNotif }) {
   }
 
   function openEdit(t) {
-    setEditForm({ title: t.title, goalId: t.goalId ? String(t.goalId) : '', priority: t.priority, date: t.date, repeat: t.repeat || 'none' });
+    setEditForm({ title: t.title, goalId: t.goalId ? String(t.goalId) : '', priority: t.priority, date: t.date, repeat: t.repeat || 'none', note: t.note || '' });
     setEditTask(t);
   }
 
@@ -1116,9 +1122,10 @@ function TasksPage({ tasks, setTasks, goals, addNotif }) {
     if (!editForm.title.trim()) return;
     await supabase.from('tasks').update({
       title: editForm.title, priority: editForm.priority,
-      date: editForm.date, repeat: editForm.repeat || 'none'
+      date: editForm.date, repeat: editForm.repeat || 'none',
+      goal_id: editForm.goalId || null, note: editForm.note || null
     }).eq('id', editTask.id);
-    setTasks(prev => prev.map(t => t.id === editTask.id ? { ...t, ...editForm, repeat: editForm.repeat || 'none' } : t));
+    setTasks(prev => prev.map(t => t.id === editTask.id ? { ...t, ...editForm, repeat: editForm.repeat || 'none', goalId: editForm.goalId || null } : t));
     addNotif({ type: 'info', icon: '✏️', title: 'تم تعديل المهمة', msg: editForm.title });
     setEditTask(null);
   }
@@ -1137,20 +1144,40 @@ function TasksPage({ tasks, setTasks, goals, addNotif }) {
     const now = new Date();
     const completedAt = done ? `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}` : null;
     await supabase.from('tasks').update({ done, completed_at: completedAt }).eq('id', id);
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, done, completedAt } : t));
+    const updatedTasks = tasks.map(t => t.id === id ? { ...t, done, completedAt } : t);
+    setTasks(updatedTasks);
+
     if (done) {
       addNotif({ type: 'success', icon: '🎉', title: 'أحسنت! 🌟', msg: `أكملت: ${task.title}` });
+
+      // Update linked goal progress
+      const linkedGoalId = task.goalId || task.goal_id;
+      if (linkedGoalId) {
+        const linkedGoal = goals.find(g => g.id === linkedGoalId);
+        if (linkedGoal) {
+          // Count completed tasks linked to this goal today
+          const goalTasks = updatedTasks.filter(t => (t.goalId || t.goal_id) === linkedGoalId);
+          const donePct = goalTasks.length ? Math.round(goalTasks.filter(t => t.done).length / goalTasks.length * 100) : 0;
+          const newProgress = Math.min(100, Math.max(linkedGoal.progress, donePct));
+          await supabase.from('goals').update({ progress: newProgress }).eq('id', linkedGoalId);
+          setGoals(prev => prev.map(g => g.id === linkedGoalId ? { ...g, progress: newProgress } : g));
+          addNotif({ type: 'info', icon: '📈', title: `تقدم "${linkedGoal.title}"`, msg: `${newProgress}% ↑` });
+        }
+      }
+
+      // Handle repeat
       if (task.repeat && task.repeat !== 'none') {
         const nextDate = getNextRepeatDate(task.date, task.repeat);
-        const exists = tasks.some(t => t.date === nextDate && t.title === task.title && !t.done);
+        const exists = updatedTasks.some(t => t.date === nextDate && t.title === task.title && !t.done);
         if (!exists) {
           const uid = (await supabase.auth.getUser()).data.user?.id;
           const { data: next } = await supabase.from('tasks').insert({
             user_id: uid, title: task.title, priority: task.priority,
-            date: nextDate, done: false, completed_at: null, repeat: task.repeat, goal_id: null
+            date: nextDate, done: false, completed_at: null, repeat: task.repeat,
+            goal_id: task.goalId || task.goal_id || null
           }).select().single();
           if (next) {
-            setTasks(prev => [...prev, { ...next, completedAt: null }]);
+            setTasks(prev => [...prev, { ...next, completedAt: null, goalId: next.goal_id }]);
             addNotif({ type: 'info', icon: '🔁', title: 'تم جدولة التكرار', msg: `${task.title} ← ${nextDate}` });
           }
         }
@@ -1216,6 +1243,7 @@ function TasksPage({ tasks, setTasks, goals, addNotif }) {
                 )}
                 {t.completedAt && <span className="task-time" style={{ color: 'var(--green)' }}>✓ {t.completedAt}</span>}
               </div>
+              {t.note && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 5, padding: '4px 8px', background: 'var(--bg4)', borderRadius: 6, borderRight: '2px solid var(--accent3)' }}>📝 {t.note}</div>}
             </div>
 
             {/* Actions */}
@@ -1699,6 +1727,18 @@ export default function App() {
     else { setGoalsState([]); setTasksState([]); }
   }, [user]);
 
+  // Daily reset: reset goal progress that came from daily tasks at midnight
+  useEffect(() => {
+    if (!user) return;
+    const lastReset = localStorage.getItem('injaz-last-reset');
+    const today = new Date().toISOString().split('T')[0];
+    if (lastReset !== today) {
+      localStorage.setItem('injaz-last-reset', today);
+      // Mark: new day started — goals keep their progress (manual reset only)
+      // But daily tasks that were done yesterday show as pending today
+    }
+  }, [user]);
+
   async function loadData(uid) {
     setDbLoading(true);
     setDataLoaded(false);
@@ -1711,7 +1751,7 @@ export default function App() {
         supabase.from('tasks').select('*').eq('user_id', uid).order('created_at'),
       ]);
       if (goalsData) setGoalsState(goalsData.map(g => ({ ...g, subtasks: g.subtasks || [] })));
-      if (tasksData) setTasksState(tasksData.map(t => ({ ...t, completedAt: t.completed_at, goalId: t.goal_id })));
+      if (tasksData) setTasksState(tasksData.map(t => ({ ...t, completedAt: t.completed_at, goalId: t.goal_id, note: t.note })));
     } catch(e) { console.error('loadData error', e); }
     setDbLoading(false);
     setDataLoaded(true);
@@ -1820,7 +1860,7 @@ export default function App() {
 
           {page === 'dashboard' && <DashboardPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} pomodoroSessions={pomodoroSessions} todayFocus={todayFocus} addNotif={addNotif} />}
           {page === 'goals' && <GoalsPage goals={goals} setGoals={setGoals} addNotif={addNotif} />}
-          {page === 'tasks' && <TasksPage tasks={tasks} setTasks={setTasks} goals={goals} addNotif={addNotif} />}
+          {page === 'tasks' && <TasksPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} addNotif={addNotif} />}
           {page === 'pomodoro' && <PomodoroPage onSession={onPomodoroSession} addNotif={addNotif} />}
           {page === 'stats' && <StatsPage tasks={tasks} goals={goals} pomodoroSessions={pomodoroSessions} todayFocus={todayFocus} />}
           {page === 'ai' && <AIPage tasks={tasks} goals={goals} addNotif={addNotif} />}
