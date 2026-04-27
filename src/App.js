@@ -687,78 +687,92 @@ function DashboardPage({ tasks, setTasks, goals, setGoals, pomodoroSessions, tod
           </div>
         </div>
 
-        {/* Active Goals */}
+        {/* Active Goals — Daily Progress */}
         <div className="card">
-          <div className="section-title mb-16"><span className="section-icon">🎯</span>الأهداف النشطة</div>
+          <div className="section-header mb-16">
+            <div className="section-title"><span className="section-icon">🎯</span>إنجاز الأهداف اليوم</div>
+            <span style={{ fontSize: 11, color: 'var(--text3)', background: 'var(--bg3)', padding: '3px 8px', borderRadius: 20 }}>يتصفر يومياً</span>
+          </div>
           {activeGoals.length === 0 && <div className="empty" style={{ padding: '20px 0' }}><div className="empty-icon" style={{ fontSize: 28 }}>🎯</div><div className="empty-text">لا أهداف نشطة</div></div>}
-          {activeGoals.map(g => (
-            <div key={g.id} style={{ marginBottom: 12, background: 'var(--bg3)', borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden' }}>
-              {/* Goal header */}
-              <div style={{ padding: '12px 14px', cursor: 'pointer' }} onClick={() => setExpandedGoal(expandedGoal === g.id ? null : g.id)}>
-                <div className="flex justify-between items-center mb-8">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: g.color, flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>{g.title}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 12, color: g.color, fontWeight: 700 }}>{g.progress}%</span>
-                    <span style={{ fontSize: 11, color: 'var(--text3)' }}>{expandedGoal === g.id ? '▲' : '▼'}</span>
-                  </div>
-                </div>
-                <ProgressBar pct={g.progress} color={g.color} h={5} />
-              </div>
+          {activeGoals.map(g => {
+            // Daily tasks linked to this goal
+            const goalTodayTasks = tasks.filter(t => {
+              const gid = t.goalId || t.goal_id;
+              return String(gid) === String(g.id) && t.date === today;
+            });
+            const goalDoneTasks = goalTodayTasks.filter(t => t.done);
+            const dailyPct = goalTodayTasks.length ? Math.round(goalDoneTasks.length / goalTodayTasks.length * 100) : 0;
+            const isExpanded = expandedGoal === g.id;
 
-              {/* Subtasks expanded */}
-              {expandedGoal === g.id && (
-                <div style={{ borderTop: '1px solid var(--border)', padding: '8px 14px 12px' }}>
-                  {(!g.subtasks || g.subtasks.length === 0) && (
-                    <div style={{ fontSize: 12, color: 'var(--text3)', padding: '8px 0', textAlign: 'center' }}>لا مهام فرعية — أضفها من صفحة الأهداف</div>
-                  )}
-                  {(g.subtasks || []).map(s => (
-                    <div key={s.id} style={{ marginBottom: 8 }}>
-                      {/* Subtask row */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, background: s.done ? 'rgba(16,185,129,0.06)' : 'var(--bg4)', border: `1px solid ${s.done ? 'rgba(16,185,129,0.2)' : 'var(--border)'}`, transition: 'all 0.2s' }}>
-                        {/* Check */}
-                        <div onClick={() => toggleSubtask(g.id, s.id)} style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${s.done ? 'var(--green)' : g.color}`, background: s.done ? 'var(--green)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, fontSize: 11, color: 'white', transition: 'all 0.2s' }}>
-                          {s.done ? '✓' : ''}
-                        </div>
-                        {/* Title */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 500, textDecoration: s.done ? 'line-through' : 'none', color: s.done ? 'var(--text3)' : 'var(--text)' }}>{s.title}</div>
-                          <div style={{ display: 'flex', gap: 8, marginTop: 3, flexWrap: 'wrap' }}>
-                            {s.dueTime && <span style={{ fontSize: 10, color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: 3 }}>⏰ {s.dueTime}</span>}
-                            {s.note && <span style={{ fontSize: 10, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 3 }}>📝 {s.note.slice(0, 30)}{s.note.length > 30 ? '...' : ''}</span>}
-                          </div>
-                        </div>
-                        {/* Edit button */}
-                        <button onClick={() => editingSubtask?.subId === s.id ? setEditingSubtask(null) : openSubtaskEdit(g.id, s)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: 'var(--text3)', padding: '2px 4px', flexShrink: 0 }} title="تعديل">✏️</button>
-                      </div>
-
-                      {/* Edit panel */}
-                      {editingSubtask?.goalId === g.id && editingSubtask?.subId === s.id && (
-                        <div style={{ margin: '6px 0 4px', padding: '12px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border2)' }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                            <div>
-                              <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 4 }}>⏰ وقت الإنجاز</div>
-                              <input type="time" className="form-input" style={{ padding: '6px 10px', fontSize: 13 }} value={subtaskTime} onChange={e => setSubtaskTime(e.target.value)} />
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
-                              <button className="btn btn-primary btn-sm" onClick={() => saveSubtaskDetails(g.id, s.id)} style={{ flex: 1, justifyContent: 'center' }}>حفظ ✅</button>
-                              <button className="btn btn-ghost btn-sm" onClick={() => setEditingSubtask(null)}>إلغاء</button>
-                            </div>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 4 }}>📝 ملاحظات</div>
-                            <textarea className="form-textarea" style={{ minHeight: 60, fontSize: 13, resize: 'none' }} placeholder="أضف ملاحظاتك هنا..." value={subtaskNote} onChange={e => setSubtaskNote(e.target.value)} />
-                          </div>
-                        </div>
-                      )}
+            return (
+              <div key={g.id} style={{ marginBottom: 12, background: 'var(--bg3)', borderRadius: 14, border: `1px solid ${isExpanded ? g.color + '40' : 'var(--border)'}`, overflow: 'hidden', transition: 'all 0.2s' }}>
+                {/* Goal header */}
+                <div style={{ padding: '14px 16px', cursor: 'pointer' }} onClick={() => setExpandedGoal(isExpanded ? null : g.id)}>
+                  <div className="flex justify-between items-center" style={{ marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: '50%', background: g.color, flexShrink: 0, boxShadow: `0 0 6px ${g.color}80` }} />
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>{g.title}</span>
                     </div>
-                  ))}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      {/* Daily ring */}
+                      <div style={{ position: 'relative', width: 36, height: 36 }}>
+                        <svg width="36" height="36" viewBox="0 0 36 36" style={{ transform: 'rotate(-90deg)' }}>
+                          <circle cx="18" cy="18" r="14" fill="none" stroke="var(--bg4)" strokeWidth="4" />
+                          <circle cx="18" cy="18" r="14" fill="none" stroke={g.color} strokeWidth="4" strokeLinecap="round"
+                            strokeDasharray={88} strokeDashoffset={88 - (88 * dailyPct / 100)}
+                            style={{ transition: 'stroke-dashoffset 0.8s ease' }} />
+                        </svg>
+                        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', fontSize: 9, fontWeight: 800, color: g.color, fontFamily: 'Tajawal, sans-serif' }}>{dailyPct}%</div>
+                      </div>
+                      <span style={{ fontSize: 11, color: 'var(--text3)' }}>{isExpanded ? '▲' : '▼'}</span>
+                    </div>
+                  </div>
+
+                  {/* Daily progress bar */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                      <span style={{ fontSize: 11, color: 'var(--text2)' }}>
+                        {goalDoneTasks.length}/{goalTodayTasks.length} مهام اليوم
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+                        الإجمالي: <span style={{ color: g.color, fontWeight: 600 }}>{g.progress}%</span>
+                      </span>
+                    </div>
+                    <ProgressBar pct={dailyPct} color={g.color} h={6} />
+                  </div>
+
+                  {/* No tasks today hint */}
+                  {goalTodayTasks.length === 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, fontStyle: 'italic' }}>
+                      💡 لا مهام اليوم لهذا الهدف — أضف مهمة وربطها به
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          ))}
+
+                {/* Expanded: today's tasks for this goal */}
+                {isExpanded && goalTodayTasks.length > 0 && (
+                  <div style={{ borderTop: '1px solid var(--border)', padding: '10px 16px 14px' }}>
+                    <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 8, fontWeight: 600 }}>مهام اليوم المرتبطة:</div>
+                    {goalTodayTasks.map(t => (
+                      <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, background: t.done ? 'rgba(16,185,129,0.06)' : 'var(--bg4)', border: `1px solid ${t.done ? 'rgba(16,185,129,0.2)' : 'var(--border)'}`, marginBottom: 6, transition: 'all 0.2s' }}>
+                        <div onClick={() => toggleTask(t.id)} style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${t.done ? 'var(--green)' : g.color}`, background: t.done ? 'var(--green)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, fontSize: 11, color: 'white', transition: 'all 0.2s' }}>
+                          {t.done ? '✓' : ''}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, textDecoration: t.done ? 'line-through' : 'none', color: t.done ? 'var(--text3)' : 'var(--text)', cursor: 'pointer' }} onClick={() => toggleTask(t.id)}>{t.title}</div>
+                          <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
+                            <span className={`badge ${t.priority}`} style={{ fontSize: 10 }}>{t.priority === 'high' ? '🔴 عالية' : t.priority === 'medium' ? '🟡 متوسطة' : '🔵 منخفضة'}</span>
+                            {t.completedAt && <span style={{ fontSize: 10, color: 'var(--green)' }}>✓ {t.completedAt}</span>}
+                            {t.note && <span style={{ fontSize: 10, color: 'var(--text2)' }}>📝 {t.note.slice(0, 25)}{t.note.length > 25 ? '...' : ''}</span>}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
