@@ -574,7 +574,7 @@ function ProgressBar({ pct, color = "var(--accent)", h = 6 }) {
 }
 
 // ============================================================
-// DASHBOARD PAGE
+// PRAYERS TRACKER
 // ============================================================
 const PRAYERS = [
   { id: 'fajr',    name: 'الفجر',  icon: '🌙' },
@@ -590,7 +590,14 @@ function PrayerTracker() {
   const [checked, setChecked] = useState(() => {
     try { return JSON.parse(localStorage.getItem(key)) || []; } catch { return []; }
   });
-
+  useEffect(() => {
+    const last = localStorage.getItem('prayer-last-day');
+    if (last !== today) {
+      localStorage.setItem('prayer-last-day', today);
+      localStorage.removeItem(key);
+      setChecked([]);
+    }
+  }, []);
   function toggle(id) {
     setChecked(prev => {
       const next = prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id];
@@ -598,353 +605,210 @@ function PrayerTracker() {
       return next;
     });
   }
-
+  const allDone = checked.length === 5;
   return (
-    <div className="card" style={{ marginBottom: 20 }}>
-      <div className="section-header mb-16">
-        <div className="section-title"><span>🕌</span> الصلوات الخمس</div>
-        <span style={{ fontSize: 12, color: checked.length === 5 ? 'var(--green)' : 'var(--text2)', fontWeight: 600 }}>
-          {checked.length}/5 {checked.length === 5 ? '✅ أكملت صلواتك' : ''}
-        </span>
+    <div style={{ background:'linear-gradient(135deg,rgba(124,110,240,0.1),rgba(6,182,212,0.05))', border:'1px solid rgba(124,110,240,0.2)', borderRadius:16, padding:'14px 16px' }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+        <span style={{ fontSize:14, fontWeight:700, display:'flex', alignItems:'center', gap:8 }}>🕌 الصلوات الخمس</span>
+        <span style={{ fontSize:11, fontWeight:700, color: allDone ? 'var(--green)' : 'var(--text2)' }}>{checked.length}/5 {allDone ? '✅' : ''}</span>
       </div>
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display:'flex', gap:6 }}>
         {PRAYERS.map(p => {
           const done = checked.includes(p.id);
           return (
-            <div key={p.id} onClick={() => toggle(p.id)} style={{
-              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-              gap: 6, padding: '12px 4px', borderRadius: 12, cursor: 'pointer',
-              transition: 'all 0.2s',
-              background: done ? 'rgba(124,110,240,0.2)' : 'var(--bg3)',
-              border: `1px solid ${done ? 'rgba(124,110,240,0.4)' : 'var(--border)'}`,
-              transform: done ? 'translateY(-2px)' : 'none',
-            }}>
-              <span style={{ fontSize: 22 }}>{done ? '✅' : p.icon}</span>
-              <span style={{ fontSize: 10, fontWeight: 600, color: done ? 'var(--accent2)' : 'var(--text2)' }}>
-                {p.name}
-              </span>
+            <div key={p.id} onClick={() => toggle(p.id)} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:5, padding:'10px 2px', borderRadius:12, cursor:'pointer', transition:'all 0.25s', background: done ? 'rgba(124,110,240,0.25)' : 'var(--bg3)', border:`1px solid ${done ? 'rgba(124,110,240,0.45)' : 'var(--border)'}`, transform: done ? 'translateY(-3px)' : 'none', boxShadow: done ? '0 6px 16px rgba(124,110,240,0.2)' : 'none' }}>
+              <span style={{ fontSize:20 }}>{done ? '✅' : p.icon}</span>
+              <span style={{ fontSize:9, fontWeight:700, color: done ? 'var(--accent2)' : 'var(--text3)' }}>{p.name}</span>
             </div>
           );
         })}
       </div>
-      {checked.length === 5 && (
-        <div style={{ textAlign: 'center', marginTop: 10, fontSize: 12, color: 'var(--green)', fontWeight: 600 }}>
-          🌟 ماشاء الله — أكملت صلواتك اليوم!
-        </div>
-      )}
-    </div>
-  );
-}function DashboardPage({ tasks, setTasks, goals, setGoals, pomodoroSessions, todayFocus, addNotif }) {
-  const today = new Date().toISOString().split("T")[0];
-  const todayTasks = tasks.filter(t => t.date === today);
-  const doneTasks = todayTasks.filter(t => t.done);
-  const pct = todayTasks.length ? Math.round((doneTasks.length / todayTasks.length) * 100) : 0;
-  const quote = QUOTES[new Date().getDay() % QUOTES.length];
-  const [expandedGoal, setExpandedGoal] = useState(null);
-  const [editingSubtask, setEditingSubtask] = useState(null); // { goalId, subId }
-  const [subtaskNote, setSubtaskNote] = useState('');
-  const [subtaskTime, setSubtaskTime] = useState('');
-
-  async function toggleTask(id) {
-    const task = tasks.find(t => t.id === id);
-    if (!task) return;
-    const done = !task.done;
-    const now = new Date();
-    const completedAt = done ? `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}` : null;
-    await supabase.from('tasks').update({ done, completed_at: completedAt }).eq('id', id);
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, done, completedAt } : t));
-    if (done) addNotif({ type: 'success', icon: '🎉', title: 'أحسنت! 🌟', msg: `أكملت: ${task.title}` });
-  }
-
-  async function toggleSubtask(goalId, subId) {
-    const goal = goals.find(g => g.id === goalId);
-    if (!goal) return;
-    const sub = goal.subtasks.find(s => s.id === subId);
-    if (!sub) return;
-    const isNowDone = !sub.done;
-    const updated = goal.subtasks.map(s => s.id === subId ? { ...s, done: isNowDone } : s);
-    const progress = updated.length ? Math.round(updated.filter(s => s.done).length / updated.length * 100) : 0;
-    // Update Supabase
-    await supabase.from('goals').update({ subtasks: updated, progress }).eq('id', goalId);
-    // Update local state immediately so progress bar animates
-    setGoals(prev => prev.map(g => g.id === goalId ? { ...g, subtasks: updated, progress } : g));
-    if (isNowDone) addNotif({ type: 'success', icon: '✅', title: 'أحسنت! تقدم الهدف: ' + progress + '%', msg: sub.title });
-  }
-
-  function openSubtaskEdit(goalId, sub) {
-    setEditingSubtask({ goalId, subId: sub.id });
-    setSubtaskNote(sub.note || '');
-    setSubtaskTime(sub.dueTime || '');
-  }
-
-  async function saveSubtaskDetails(goalId, subId) {
-    const goal = goals.find(g => g.id === goalId);
-    if (!goal) return;
-    const updated = goal.subtasks.map(s => s.id === subId ? { ...s, note: subtaskNote, dueTime: subtaskTime } : s);
-    await supabase.from('goals').update({ subtasks: updated }).eq('id', goalId);
-    setGoals(prev => prev.map(g => g.id === goalId ? { ...g, subtasks: updated } : g));
-    setEditingSubtask(null);
-    addNotif({ type: 'info', icon: '📝', title: 'تم حفظ الملاحظة' });
-  }
-
-  const activeGoals = goals.filter(g => g.status === 'active');
-
-  return (
-    <div className="page">
-      {/* Quote */}
-      <div className="quote-card">
-        <div className="quote-mark">"</div>
-        <div className="quote-text">{quote}</div>
-        <div className="quote-label">✨ اقتباس اليوم</div>
-      </div>
-<PrayerTracker />
-      {/* Stats */}
-      <div className="stats-grid">
-        <div className="stat-card purple">
-          <div className="stat-icon">✅</div>
-          <div className="stat-value">{doneTasks.length}</div>
-          <div className="stat-label">مهام مكتملة اليوم</div>
-          <div className="stat-trend">↑ {todayTasks.length} مهمة إجمالاً</div>
-        </div>
-        <div className="stat-card amber">
-          <div className="stat-icon">⏳</div>
-          <div className="stat-value">{todayTasks.filter(t => !t.done).length}</div>
-          <div className="stat-label">مهام متبقية</div>
-          <div className="stat-trend" style={{ color: 'var(--amber)' }}>تحتاج إنجاز اليوم</div>
-        </div>
-        <div className="stat-card green">
-          <div className="stat-icon">🎯</div>
-          <div className="stat-value">{todayFocus.toFixed(1)}س</div>
-          <div className="stat-label">وقت التركيز اليوم</div>
-          <div className="stat-trend">{pomodoroSessions} جلسة بومودورو</div>
-        </div>
-        <div className="stat-card blue">
-          <div className="stat-icon">📈</div>
-          <div className="stat-value">{pct}%</div>
-          <div className="stat-label">نسبة الإنجاز اليومي</div>
-          <div className="stat-trend" style={{ color: pct >= 70 ? 'var(--green)' : 'var(--amber)' }}>
-            {pct >= 70 ? '🔥 أداء رائع' : '💪 استمر في المحاولة'}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid-3">
-        {/* Today Tasks — Full Details */}
-        <div className="card">
-          <div className="section-header">
-            <div className="section-title"><span className="section-icon">📋</span>مهام اليوم</div>
-            <div className="today-ring">
-              <svg width="80" height="80" viewBox="0 0 80 80">
-                <circle className="pomo-circle-bg" cx="40" cy="40" r="32" style={{ stroke: 'var(--bg4)' }} />
-                <circle cx="40" cy="40" r="32"
-                  fill="none" stroke="var(--accent)" strokeWidth="7" strokeLinecap="round"
-                  strokeDasharray={201}
-                  strokeDashoffset={201 - (201 * pct / 100)}
-                  style={{ transform: 'rotate(-90deg)', transformOrigin: '40px 40px', transition: 'stroke-dashoffset 1s ease' }}
-                />
-              </svg>
-              <div className="today-ring-pct">{pct}%</div>
-            </div>
-          </div>
-
-          {/* Sort: pending first by priority, then done */}
-          <div className="scroll-area" style={{ maxHeight: 480 }}>
-            {todayTasks.length === 0 ? (
-              <div className="empty"><div className="empty-icon">🌟</div><div className="empty-text">لا مهام اليوم. أضف مهمتك الأولى!</div></div>
-            ) : [...todayTasks]
-              .sort((a,b) => {
-                if (a.done !== b.done) return a.done ? 1 : -1;
-                const p = { high:0, medium:1, low:2 };
-                return (p[a.priority]||1) - (p[b.priority]||1);
-              })
-              .map(t => {
-                const linkedGoal = goals.find(g => String(g.id) === String(t.goalId || t.goal_id));
-                const isOverdue = !t.done && t.time && new Date(`${today}T${t.time}:00`) < new Date();
-                return (
-                  <div key={t.id} style={{
-                    background: t.done ? 'rgba(16,185,129,0.04)' : isOverdue ? 'rgba(239,68,68,0.04)' : 'var(--bg3)',
-                    border: `1px solid ${t.done ? 'rgba(16,185,129,0.15)' : isOverdue ? 'rgba(239,68,68,0.2)' : 'var(--border)'}`,
-                    borderRadius: 14, padding: '14px 16px', marginBottom: 10,
-                    transition: 'all 0.2s', opacity: t.done ? 0.75 : 1,
-                    borderRight: `4px solid ${t.priority === 'high' ? 'var(--red)' : t.priority === 'medium' ? 'var(--amber)' : 'var(--blue)'}`,
-                  }}>
-                    {/* Row 1: Checkbox + Title + Time */}
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                      {/* Checkbox */}
-                      <div onClick={() => toggleTask(t.id)} style={{
-                        width: 22, height: 22, borderRadius: 7, flexShrink: 0, marginTop: 1,
-                        border: `2px solid ${t.done ? 'var(--green)' : t.priority === 'high' ? 'var(--red)' : t.priority === 'medium' ? 'var(--amber)' : 'var(--blue)'}`,
-                        background: t.done ? 'var(--green)' : 'transparent',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        cursor: 'pointer', color: 'white', fontSize: 12, fontWeight: 700,
-                        transition: 'all 0.2s',
-                      }}>{t.done ? '✓' : ''}</div>
-
-                      {/* Content */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        {/* Title + time badge */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                          <div onClick={() => toggleTask(t.id)} style={{
-                            fontSize: 14, fontWeight: 600, cursor: 'pointer', flex: 1,
-                            textDecoration: t.done ? 'line-through' : 'none',
-                            color: t.done ? 'var(--text3)' : 'var(--text)',
-                          }}>{t.title}</div>
-                          {t.time && (
-                            <span style={{
-                              fontSize: 11, padding: '2px 8px', borderRadius: 20, flexShrink: 0,
-                              background: isOverdue && !t.done ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
-                              color: isOverdue && !t.done ? 'var(--red)' : 'var(--amber)', fontWeight: 700,
-                            }}>⏰ {t.time}{isOverdue && !t.done ? ' ⚠️' : ''}</span>
-                          )}
-                        </div>
-
-                        {/* Row 2: Badges */}
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
-                          {/* Priority */}
-                          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, fontWeight: 600,
-                            background: t.priority === 'high' ? 'rgba(239,68,68,0.12)' : t.priority === 'medium' ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)',
-                            color: t.priority === 'high' ? 'var(--red)' : t.priority === 'medium' ? 'var(--amber)' : 'var(--blue)',
-                          }}>{t.priority === 'high' ? '🔴 عالية' : t.priority === 'medium' ? '🟡 متوسطة' : '🔵 منخفضة'}</span>
-
-                          {/* Linked goal */}
-                          {linkedGoal && (
-                            <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, fontWeight: 600,
-                              background: `${linkedGoal.color}18`, color: linkedGoal.color,
-                            }}>🎯 {linkedGoal.title}</span>
-                          )}
-
-                          {/* Repeat */}
-                          {t.repeat && t.repeat !== 'none' && (
-                            <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20,
-                              background: 'rgba(124,110,240,0.12)', color: 'var(--accent2)', fontWeight: 600,
-                            }}>
-                              {t.repeat === 'daily' ? '🔁 يومي'
-                                : t.repeat === 'weekly' && t.weekDays?.length
-                                  ? `📆 ${(t.weekDays||[]).map(d=>['أحد','اثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت'][d]).join('،')}`
-                                  : '🗓️ شهري'}
-                            </span>
-                          )}
-
-                          {/* Completed time */}
-                          {t.done && t.completedAt && (
-                            <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20,
-                              background: 'rgba(16,185,129,0.12)', color: 'var(--green)', fontWeight: 600,
-                            }}>✅ أُنجز {t.completedAt}</span>
-                          )}
-                        </div>
-
-                        {/* Row 3: Note */}
-                        {t.note && (
-                          <div style={{
-                            marginTop: 8, padding: '7px 10px',
-                            background: 'var(--bg4)', borderRadius: 8,
-                            borderRight: '2px solid var(--accent3)',
-                            fontSize: 12, color: 'var(--text2)', lineHeight: 1.6,
-                          }}>📝 {t.note}</div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            }
-          </div>
-        </div>
-
-        {/* Active Goals — Daily Progress */}
-        <div className="card">
-          <div className="section-header mb-16">
-            <div className="section-title"><span className="section-icon">🎯</span>إنجاز الأهداف اليوم</div>
-            <span style={{ fontSize: 11, color: 'var(--text3)', background: 'var(--bg3)', padding: '3px 8px', borderRadius: 20 }}>يتصفر يومياً</span>
-          </div>
-          {activeGoals.length === 0 && <div className="empty" style={{ padding: '20px 0' }}><div className="empty-icon" style={{ fontSize: 28 }}>🎯</div><div className="empty-text">لا أهداف نشطة</div></div>}
-          {activeGoals.map(g => {
-            // Daily tasks linked to this goal
-            const goalTodayTasks = tasks.filter(t => {
-              const gid = t.goalId || t.goal_id;
-              return String(gid) === String(g.id) && t.date === today;
-            });
-            const goalDoneTasks = goalTodayTasks.filter(t => t.done);
-            const dailyPct = goalTodayTasks.length ? Math.round(goalDoneTasks.length / goalTodayTasks.length * 100) : 0;
-            const isExpanded = expandedGoal === g.id;
-
-            return (
-              <div key={g.id} style={{ marginBottom: 12, background: 'var(--bg3)', borderRadius: 14, border: `1px solid ${isExpanded ? g.color + '40' : 'var(--border)'}`, overflow: 'hidden', transition: 'all 0.2s' }}>
-                {/* Goal header */}
-                <div style={{ padding: '14px 16px', cursor: 'pointer' }} onClick={() => setExpandedGoal(isExpanded ? null : g.id)}>
-                  <div className="flex justify-between items-center" style={{ marginBottom: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ width: 10, height: 10, borderRadius: '50%', background: g.color, flexShrink: 0, boxShadow: `0 0 6px ${g.color}80` }} />
-                      <span style={{ fontSize: 13, fontWeight: 700 }}>{g.title}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      {/* Daily ring */}
-                      <div style={{ position: 'relative', width: 36, height: 36 }}>
-                        <svg width="36" height="36" viewBox="0 0 36 36" style={{ transform: 'rotate(-90deg)' }}>
-                          <circle cx="18" cy="18" r="14" fill="none" stroke="var(--bg4)" strokeWidth="4" />
-                          <circle cx="18" cy="18" r="14" fill="none" stroke={g.color} strokeWidth="4" strokeLinecap="round"
-                            strokeDasharray={88} strokeDashoffset={88 - (88 * dailyPct / 100)}
-                            style={{ transition: 'stroke-dashoffset 0.8s ease' }} />
-                        </svg>
-                        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', fontSize: 9, fontWeight: 800, color: g.color, fontFamily: 'Tajawal, sans-serif' }}>{dailyPct}%</div>
-                      </div>
-                      <span style={{ fontSize: 11, color: 'var(--text3)' }}>{isExpanded ? '▲' : '▼'}</span>
-                    </div>
-                  </div>
-
-                  {/* Daily progress bar */}
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                      <span style={{ fontSize: 11, color: 'var(--text2)' }}>
-                        {goalDoneTasks.length}/{goalTodayTasks.length} مهام اليوم
-                      </span>
-                      <span style={{ fontSize: 11, color: 'var(--text3)' }}>
-                        الإجمالي: <span style={{ color: g.color, fontWeight: 600 }}>{g.progress}%</span>
-                      </span>
-                    </div>
-                    <ProgressBar pct={dailyPct} color={g.color} h={6} />
-                  </div>
-
-                  {/* No tasks today hint */}
-                  {goalTodayTasks.length === 0 && (
-                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, fontStyle: 'italic' }}>
-                      💡 لا مهام اليوم لهذا الهدف — أضف مهمة وربطها به
-                    </div>
-                  )}
-                </div>
-
-                {/* Expanded: today's tasks for this goal */}
-                {isExpanded && goalTodayTasks.length > 0 && (
-                  <div style={{ borderTop: '1px solid var(--border)', padding: '10px 16px 14px' }}>
-                    <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 8, fontWeight: 600 }}>مهام اليوم المرتبطة:</div>
-                    {goalTodayTasks.map(t => (
-                      <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, background: t.done ? 'rgba(16,185,129,0.06)' : 'var(--bg4)', border: `1px solid ${t.done ? 'rgba(16,185,129,0.2)' : 'var(--border)'}`, marginBottom: 6, transition: 'all 0.2s' }}>
-                        <div onClick={() => toggleTask(t.id)} style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${t.done ? 'var(--green)' : g.color}`, background: t.done ? 'var(--green)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, fontSize: 11, color: 'white', transition: 'all 0.2s' }}>
-                          {t.done ? '✓' : ''}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 500, textDecoration: t.done ? 'line-through' : 'none', color: t.done ? 'var(--text3)' : 'var(--text)', cursor: 'pointer' }} onClick={() => toggleTask(t.id)}>{t.title}</div>
-                          <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
-                            <span className={`badge ${t.priority}`} style={{ fontSize: 10 }}>{t.priority === 'high' ? '🔴 عالية' : t.priority === 'medium' ? '🟡 متوسطة' : '🔵 منخفضة'}</span>
-                            {t.completedAt && <span style={{ fontSize: 10, color: 'var(--green)' }}>✓ {t.completedAt}</span>}
-                            {t.note && <span style={{ fontSize: 10, color: 'var(--text2)' }}>📝 {t.note.slice(0, 25)}{t.note.length > 25 ? '...' : ''}</span>}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      {allDone && <div style={{ textAlign:'center', marginTop:10, fontSize:11, color:'var(--green)', fontWeight:700 }}>🌟 ماشاء الله — أكملت صلواتك اليوم!</div>}
     </div>
   );
 }
 
 // ============================================================
-// GOALS PAGE
+// DASHBOARD PAGE
+// ============================================================
+function DashboardPage({ tasks, setTasks, goals, setGoals, pomodoroSessions, todayFocus, addNotif }) {
+  const today = new Date().toISOString().split("T")[0];
+  const todayTasks  = tasks.filter(t => t.date === today);
+  const doneTasks   = todayTasks.filter(t => t.done);
+  const pct         = todayTasks.length ? Math.round(doneTasks.length / todayTasks.length * 100) : 0;
+  const quote       = QUOTES[new Date().getDay() % QUOTES.length];
+  const activeGoals = goals.filter(g => g.status === 'active');
+
+  const sortedTasks = [...todayTasks].sort((a, b) => {
+    if (a.done !== b.done) return a.done ? 1 : -1;
+    return ({'high':0,'medium':1,'low':2}[a.priority]??1) - ({'high':0,'medium':1,'low':2}[b.priority]??1);
+  });
+
+  async function toggleTask(id) {
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+    const done = !task.done;
+    const now  = new Date();
+    const completedAt = done ? `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}` : null;
+    await supabase.from('tasks').update({ done, completed_at: completedAt }).eq('id', id);
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, done, completedAt } : t));
+    if (done) addNotif({ type:'success', icon:'🎉', title:'أحسنت!', msg: task.title });
+  }
+
+  return (
+    <div className="page" style={{ padding:'18px 20px' }}>
+
+      {/* Injected responsive CSS */}
+      <style>{`
+        .db-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:18px; }
+        .db-layout { display:grid; grid-template-columns:1fr 290px; gap:16px; align-items:start; }
+        .db-tasks-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:10px; }
+        .db-sidebar { display:flex; flex-direction:column; gap:14px; }
+        @media (max-width:900px) {
+          .db-layout { grid-template-columns:1fr; }
+        }
+        @media (max-width:600px) {
+          .db-stats { grid-template-columns:repeat(2,1fr); }
+          .db-tasks-grid { grid-template-columns:1fr; }
+        }
+      `}</style>
+
+      {/* ── Stats ── */}
+      <div className="db-stats">
+        {[
+          { icon:'✅', val:doneTasks.length,                      label:'مكتملة',  sub:`${todayTasks.length} إجمالاً`, color:'var(--accent)' },
+          { icon:'⏳', val:todayTasks.filter(t=>!t.done).length,  label:'متبقية',  sub:'اليوم',                        color:'var(--amber)'  },
+          { icon:'🎯', val:todayFocus.toFixed(1)+'س',             label:'تركيز',   sub:`${pomodoroSessions} جلسة`,      color:'var(--green)'  },
+          { icon:'📈', val:pct+'%',                               label:'الإنجاز', sub:pct>=70?'🔥 رائع':'💪 استمر',  color:pct>=70?'var(--green)':'var(--amber)' },
+        ].map((s,i) => (
+          <div key={i} style={{ background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:14, padding:'12px 14px', display:'flex', alignItems:'center', gap:12 }}>
+            <span style={{ fontSize:24 }}>{s.icon}</span>
+            <div>
+              <div style={{ fontSize:20, fontWeight:900, fontFamily:'Tajawal,sans-serif', color:s.color, lineHeight:1 }}>{s.val}</div>
+              <div style={{ fontSize:10, color:'var(--text2)', marginTop:2 }}>{s.label}</div>
+              <div style={{ fontSize:9, color:s.color }}>{s.sub}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── 2-col layout ── */}
+      <div className="db-layout">
+
+        {/* LEFT: Tasks */}
+        <div style={{ background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:16, overflow:'hidden' }}>
+          {/* header */}
+          <div style={{ padding:'14px 18px 12px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <span style={{ fontSize:15, fontWeight:700 }}>📋 مهام اليوم</span>
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <span style={{ fontSize:12, color:'var(--text2)' }}>{doneTasks.length}/{todayTasks.length} مكتملة</span>
+              <div style={{ position:'relative', width:44, height:44 }}>
+                <svg width="44" height="44" viewBox="0 0 44 44">
+                  <circle cx="22" cy="22" r="16" fill="none" stroke="var(--bg4)" strokeWidth="5"/>
+                  <circle cx="22" cy="22" r="16" fill="none" stroke="var(--accent)" strokeWidth="5"
+                    strokeLinecap="round" strokeDasharray={100.5}
+                    strokeDashoffset={100.5-(100.5*pct/100)}
+                    style={{ transform:'rotate(-90deg)', transformOrigin:'22px 22px', transition:'stroke-dashoffset 1s ease' }}/>
+                </svg>
+                <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', fontSize:9, fontWeight:900, color:'var(--accent)', fontFamily:'Tajawal,sans-serif' }}>{pct}%</div>
+              </div>
+            </div>
+          </div>
+
+          {/* tasks */}
+          <div style={{ padding:'12px 14px 16px' }}>
+            {sortedTasks.length === 0 ? (
+              <div style={{ textAlign:'center', padding:'40px 0', color:'var(--text3)' }}>
+                <div style={{ fontSize:36, marginBottom:8 }}>🌟</div>
+                <div style={{ fontSize:13 }}>لا مهام اليوم — أضف مهمتك الأولى!</div>
+              </div>
+            ) : (
+              <div className="db-tasks-grid">
+                {sortedTasks.map(t => {
+                  const linkedGoal = goals.find(g => String(g.id)===String(t.goalId||t.goal_id));
+                  const isOverdue  = !t.done && t.time && new Date(`${today}T${t.time}:00`) < new Date();
+                  const pc = t.priority==='high'?'var(--red)':t.priority==='medium'?'var(--amber)':'var(--blue)';
+                  return (
+                    <div key={t.id} style={{ background:t.done?'rgba(16,185,129,0.04)':'var(--bg3)', border:`1px solid ${t.done?'rgba(16,185,129,0.14)':isOverdue?'rgba(239,68,68,0.28)':'var(--border)'}`, borderRadius:12, padding:'11px 13px', borderRight:`3px solid ${pc}`, opacity:t.done?0.65:1, transition:'all 0.2s' }}>
+                      <div style={{ display:'flex', alignItems:'flex-start', gap:9 }}>
+                        {/* checkbox */}
+                        <div onClick={()=>toggleTask(t.id)} style={{ width:20, height:20, borderRadius:6, flexShrink:0, marginTop:2, cursor:'pointer', border:`2px solid ${t.done?'var(--green)':pc}`, background:t.done?'var(--green)':'transparent', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:11, fontWeight:700, transition:'all 0.2s' }}>{t.done?'✓':''}</div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          {/* title + time */}
+                          <div style={{ display:'flex', justifyContent:'space-between', gap:6, marginBottom:5 }}>
+                            <div onClick={()=>toggleTask(t.id)} style={{ fontSize:13, fontWeight:600, cursor:'pointer', flex:1, textDecoration:t.done?'line-through':'none', color:t.done?'var(--text3)':'var(--text)' }}>{t.title}</div>
+                            {t.time && <span style={{ fontSize:10, padding:'2px 7px', borderRadius:20, flexShrink:0, fontWeight:700, background:isOverdue&&!t.done?'rgba(239,68,68,0.14)':'rgba(245,158,11,0.12)', color:isOverdue&&!t.done?'var(--red)':'var(--amber)' }}>⏰{t.time}{isOverdue&&!t.done?' ⚠️':''}</span>}
+                          </div>
+                          {/* badges */}
+                          <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
+                            <span style={{ fontSize:9, padding:'2px 7px', borderRadius:20, fontWeight:600, background:t.priority==='high'?'rgba(239,68,68,0.1)':t.priority==='medium'?'rgba(245,158,11,0.1)':'rgba(59,130,246,0.1)', color:pc }}>{t.priority==='high'?'🔴 عالية':t.priority==='medium'?'🟡 متوسطة':'🔵 منخفضة'}</span>
+                            {linkedGoal && <span style={{ fontSize:9, padding:'2px 7px', borderRadius:20, fontWeight:600, background:`${linkedGoal.color}18`, color:linkedGoal.color }}>🎯 {linkedGoal.title}</span>}
+                            {t.repeat&&t.repeat!=='none'&&<span style={{ fontSize:9, padding:'2px 7px', borderRadius:20, fontWeight:600, background:'rgba(124,110,240,0.1)', color:'var(--accent2)' }}>{t.repeat==='daily'?'🔁 يومي':t.repeat==='weekly'?'📆 أسبوعي':'🗓️ شهري'}</span>}
+                            {t.done&&t.completedAt&&<span style={{ fontSize:9, padding:'2px 7px', borderRadius:20, fontWeight:600, background:'rgba(16,185,129,0.1)', color:'var(--green)' }}>✅ {t.completedAt}</span>}
+                          </div>
+                          {/* note */}
+                          {t.note && <div style={{ marginTop:6, padding:'5px 8px', background:'var(--bg4)', borderRadius:7, borderRight:'2px solid var(--accent3)', fontSize:11, color:'var(--text2)' }}>📝 {t.note}</div>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT / BOTTOM: Sidebar */}
+        <div className="db-sidebar">
+
+          {/* Prayers */}
+          <PrayerTracker />
+
+          {/* Goals compact */}
+          <div style={{ background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:16, padding:'14px 16px' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+              <span style={{ fontSize:14, fontWeight:700 }}>🎯 الأهداف اليوم</span>
+              <span style={{ fontSize:10, color:'var(--text3)', background:'var(--bg3)', padding:'3px 8px', borderRadius:20 }}>يتصفر يومياً</span>
+            </div>
+            {activeGoals.length === 0 ? (
+              <div style={{ textAlign:'center', padding:'12px 0', color:'var(--text3)', fontSize:12 }}>لا أهداف نشطة</div>
+            ) : activeGoals.map(g => {
+              const gTasks = tasks.filter(t=>String(t.goalId||t.goal_id)===String(g.id)&&t.date===today);
+              const gDone  = gTasks.filter(t=>t.done);
+              const dp     = gTasks.length ? Math.round(gDone.length/gTasks.length*100) : 0;
+              return (
+                <div key={g.id} style={{ marginBottom:14 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+                      <div style={{ width:8, height:8, borderRadius:'50%', background:g.color, boxShadow:`0 0 5px ${g.color}80`, flexShrink:0 }}/>
+                      <span style={{ fontSize:12, fontWeight:600 }}>{g.title}</span>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
+                      <span style={{ fontSize:13, color:g.color, fontWeight:900, fontFamily:'Tajawal,sans-serif' }}>{dp}%</span>
+                      <span style={{ fontSize:9, color:'var(--text3)' }}>/{g.progress}%</span>
+                    </div>
+                  </div>
+                  <ProgressBar pct={dp} color={g.color} h={7}/>
+                  <div style={{ fontSize:9, color:'var(--text3)', marginTop:4 }}>
+                    {gTasks.length===0 ? '💡 لا مهام مرتبطة اليوم' : `${gDone.length}/${gTasks.length} مهمة اليوم`}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Quote */}
+          <div style={{ background:'linear-gradient(135deg,rgba(124,110,240,0.08),rgba(92,79,212,0.04))', border:'1px solid rgba(124,110,240,0.15)', borderRadius:16, padding:'16px 18px' }}>
+            <div style={{ fontSize:40, color:'var(--accent)', opacity:0.15, lineHeight:1, fontFamily:'serif', marginBottom:-6 }}>"</div>
+            <div style={{ fontSize:13, lineHeight:1.85, color:'var(--text)', fontWeight:500 }}>{quote}</div>
+            <div style={{ fontSize:11, color:'var(--accent2)', marginTop:10, fontWeight:700 }}>✨ اقتباس اليوم</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
 // ============================================================
 const EMPTY_GOAL_FORM = { title: '', category: '', startDate: '', endDate: '', color: '#6366f1', status: 'active' };
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#06b6d4', '#8b5cf6', '#ec4899'];
