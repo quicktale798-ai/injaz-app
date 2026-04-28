@@ -826,23 +826,55 @@ function PomodoroPage({ onSession, addNotif }) {
   const [secs, setSecs]         = useState(25*60);
   const [sessions, setSessions] = useState(0);
   const intervalRef = useRef(null);
+  const startTimeRef = useRef(null);   // real clock when started
+  const startSecsRef = useRef(25*60);  // secs remaining when started
   const totalSecs = phase==="work" ? workMin*60 : breakMin*60;
 
   useEffect(()=>{
     if(!isRunning) return;
-    intervalRef.current = setInterval(()=>{
-      setSecs(s=>{
-        if(s<=1){
-          clearInterval(intervalRef.current);
-          if(phase==="work"){ addNotif({type:"success",icon:"🍅",title:"انتهت جلسة التركيز!",msg:"خذ استراحة"}); onSession(workMin); setSessions(p=>p+1); setPhase("break"); setSecs(breakMin*60); }
-          else { addNotif({type:"info",icon:"💪",title:"انتهت الاستراحة!",msg:"جاهز للجولة التالية؟"}); setPhase("work"); setSecs(workMin*60); }
-          setIsRunning(false); return 0;
+
+    // Record real start time
+    startTimeRef.current = Date.now();
+    startSecsRef.current = secs;
+
+    function tick() {
+      const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+      const remaining = startSecsRef.current - elapsed;
+
+      if(remaining <= 0){
+        clearInterval(intervalRef.current);
+        setSecs(0);
+        if(phase==="work"){
+          addNotif({type:"success",icon:"🍅",title:"انتهت جلسة التركيز!",msg:"خذ استراحة"});
+          onSession(workMin); setSessions(p=>p+1); setPhase("break");
+          setSecs(breakMin*60); startSecsRef.current=breakMin*60;
+        } else {
+          addNotif({type:"info",icon:"💪",title:"انتهت الاستراحة!",msg:"جاهز للجولة التالية؟"});
+          setPhase("work"); setSecs(workMin*60); startSecsRef.current=workMin*60;
         }
-        return s-1;
-      });
-    },1000);
+        startTimeRef.current = Date.now();
+        setIsRunning(false);
+        return;
+      }
+      setSecs(remaining);
+    }
+
+    intervalRef.current = setInterval(tick, 500); // check every 500ms
+    tick(); // immediate first tick
     return ()=>clearInterval(intervalRef.current);
   },[isRunning,phase,workMin,breakMin]);
+
+  // Handle visibility change — recalculate when screen comes back
+  useEffect(()=>{
+    function onVisible(){
+      if(!isRunning || !startTimeRef.current) return;
+      const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+      const remaining = Math.max(0, startSecsRef.current - elapsed);
+      setSecs(remaining);
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return ()=>document.removeEventListener("visibilitychange", onVisible);
+  },[isRunning]);
 
   const mins=Math.floor(secs/60).toString().padStart(2,"0");
   const sec2=(secs%60).toString().padStart(2,"0");
