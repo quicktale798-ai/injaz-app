@@ -746,7 +746,7 @@ function TasksPage({ tasks, setTasks, goals, setGoals, addNotif }) {
   const filtered=tasks.filter(t=>{
     if(filter==="today") return t.date===today;
     if(filter==="done")  return t.done;
-    if(filter==="pending") return !t.done;
+    if(filter==="pending") return !t.done && t.date < today; // متأخرة فقط — قبل اليوم
     if(filter==="high")  return t.priority==="high";
     return true;
   }).sort((a,b)=>{if(a.done!==b.done)return a.done?1:-1;return({"high":0,"medium":1,"low":2}[a.priority]??1)-({"high":0,"medium":1,"low":2}[b.priority]??1);});
@@ -1130,7 +1130,8 @@ export default function App() {
 
   const today=new Date();
   const dateStr=today.toLocaleDateString("ar-EG",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
-  const pendingCount=tasks.filter(t=>!t.done&&t.date===today.toISOString().split("T")[0]).length;
+  const todayStr=today.toISOString().split("T")[0];
+  const pendingCount=tasks.filter(t=>!t.done&&t.date<todayStr).length; // متأخرة فقط
   const NAV=[
     {id:"dashboard",icon:"🏠",label:"الرئيسية"},
     {id:"goals",icon:"🎯",label:"الأهداف"},
