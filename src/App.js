@@ -701,7 +701,8 @@ function TasksPage({ tasks, setTasks, goals, setGoals, addNotif }) {
       if(task.repeat&&task.repeat!=="none"){
         const uid = (await supabase.auth.getUser()).data.user?.id;
         if(task.repeat==="weekly"&&task.weekDays?.length){
-          const base=new Date(task.date+"T00:00:00");
+          // Use today as base so weekly tasks always schedule from current date
+          const base=new Date(new Date().toISOString().split("T")[0]+"T00:00:00");
           for(let wi=1;wi<=7;wi++){
             const d=new Date(base);
             d.setDate(d.getDate()+wi);
@@ -716,7 +717,9 @@ function TasksPage({ tasks, setTasks, goals, setGoals, addNotif }) {
           }
           addNotif({type:"info",icon:"🔁",title:"تم جدولة التكرار الأسبوعي",msg:task.title});
         } else {
-          const nextDate=getNextRepeatDate(task.date,task.repeat);
+          // Use TODAY as base to always schedule for next occurrence from now
+          const baseDate = new Date().toISOString().split("T")[0];
+          const nextDate = getNextRepeatDate(baseDate, task.repeat);
           // Check in Supabase directly to avoid state sync issues
           const {data:existing}=await supabase.from("tasks").select("id").eq("user_id",uid).eq("title",task.title).eq("date",nextDate).eq("done",false).limit(1);
           if(!existing||existing.length===0){
@@ -752,7 +755,29 @@ function TasksPage({ tasks, setTasks, goals, setGoals, addNotif }) {
     <div className="page">
       <div className="section-header">
         <div className="section-title"><span>📋</span>المهام اليومية</div>
-        <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ مهمة جديدة</button>
+        <div style={{display:"flex",gap:8}}>
+          <button className="btn btn-ghost btn-sm" onClick={async()=>{
+            const uid=(await supabase.auth.getUser()).data.user?.id;
+            const today=new Date().toISOString().split("T")[0];
+            const tomorrow=getNextRepeatDate(today,"daily");
+            let count=0;
+            const doneTodayRepeat=tasks.filter(t=>t.done&&t.repeat&&t.repeat!=="none");
+            for(const t of doneTodayRepeat){
+              const nd=t.repeat==="weekly"&&t.weekDays?.length ? (() => {
+                const base=new Date(today+"T00:00:00");
+                for(let wi=1;wi<=7;wi++){const d=new Date(base);d.setDate(d.getDate()+wi);if(t.weekDays.includes(d.getDay()))return d.toISOString().split("T")[0];}
+                return tomorrow;
+              })() : getNextRepeatDate(today,t.repeat);
+              const{data:ex}=await supabase.from("tasks").select("id").eq("user_id",uid).eq("title",t.title).eq("date",nd).eq("done",false).limit(1);
+              if(!ex||ex.length===0){
+                const{data:next}=await supabase.from("tasks").insert({user_id:uid,title:t.title,priority:t.priority,date:nd,done:false,completed_at:null,repeat:t.repeat,goal_id:t.goalId||t.goal_id||null,time:t.time||null,week_days:t.weekDays||null,note:t.note||null}).select().single();
+                if(next){setTasks(prev=>[...prev,{...next,completedAt:null,goalId:next.goal_id,weekDays:next.week_days}]);count++;}
+              }
+            }
+            addNotif({type:"success",icon:"🔁",title:`تم جدولة ${count} مهمة متكررة`,msg:"ستظهر في التواريخ القادمة"});
+          }} title="أعد جدولة المهام المتكررة">🔁 جدولة التكرار</button>
+          <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ مهمة جديدة</button>
+        </div>
       </div>
       <div className="tabs">
         {[["all","الكل"],["today","اليوم"],["pending","معلقة"],["done","مكتملة"],["high","عالية"]].map(([v,l])=>(
