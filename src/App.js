@@ -702,8 +702,18 @@ function TasksPage({ tasks, setTasks, goals, setGoals, addNotif }) {
         const uid = (await supabase.auth.getUser()).data.user?.id;
         if(task.repeat==="weekly"&&task.weekDays?.length){
           const base=new Date(task.date+"T00:00:00");
-          for(let i=1;i<=7;i++){const d=new Date(base);d.setDate(d.getDate()+i);if(task.weekDays.includes(d.getDay())){const nd=d.toISOString().split("T")[0];const{data:exW}=await supabase.from("tasks").select("id").eq("user_id",uid).eq("title",task.title).eq("date",nd).eq("done",false).limit(1);
-            if(!exW||exW.length===0){const{data:next}=await supabase.from("tasks").insert({user_id:uid,title:task.title,priority:task.priority,date:nd,done:false,completed_at:null,repeat:task.repeat,goal_id:task.goalId||task.goal_id||null,time:task.time||null,week_days:task.weekDays,note:task.note||null}).select().single();if(next)setTasks(prev=>[...prev,{...next,completedAt:null,goalId:next.goal_id,weekDays:next.week_days}]);}}}}
+          for(let wi=1;wi<=7;wi++){
+            const d=new Date(base);
+            d.setDate(d.getDate()+wi);
+            if(task.weekDays.includes(d.getDay())){
+              const nd=d.toISOString().split("T")[0];
+              const{data:exW}=await supabase.from("tasks").select("id").eq("user_id",uid).eq("title",task.title).eq("date",nd).eq("done",false).limit(1);
+              if(!exW||exW.length===0){
+                const{data:next}=await supabase.from("tasks").insert({user_id:uid,title:task.title,priority:task.priority,date:nd,done:false,completed_at:null,repeat:task.repeat,goal_id:task.goalId||task.goal_id||null,time:task.time||null,week_days:task.weekDays,note:task.note||null}).select().single();
+                if(next)setTasks(prev=>[...prev,{...next,completedAt:null,goalId:next.goal_id,weekDays:next.week_days}]);
+              }
+            }
+          }
           addNotif({type:"info",icon:"🔁",title:"تم جدولة التكرار الأسبوعي",msg:task.title});
         } else {
           const nextDate=getNextRepeatDate(task.date,task.repeat);
