@@ -818,63 +818,155 @@ function TasksPage({ tasks, setTasks, goals, setGoals, addNotif }) {
 }
 
 // ── Pomodoro Page ────────────────────────────────────────────
-function PomodoroPage({ onSession, addNotif }) {
-  const [workMin, setWorkMin]   = useState(25);
-  const [breakMin, setBreakMin] = useState(5);
-  const [isRunning, setIsRunning] = useState(false);
-  const [phase, setPhase]       = useState("work");
-  const [secs, setSecs]         = useState(25*60);
-  const [sessions, setSessions] = useState(0);
+const POMO_KEY = "injaz-pomo-state";
+
+function savePomo(state) {
+  try { localStorage.setItem(POMO_KEY, JSON.stringify(state)); } catch(e){}
+}
+function loadPomo() {
+  try { return JSON.parse(localStorage.getItem(POMO_KEY)); } catch(e){ return null; }
+}
+
+function PomodoroPage({ onSession, addNotif, goals }) {
+  const saved = loadPomo();
+
+  const [workMin, setWorkMin]   = useState(saved?.workMin || 25);
+  const [breakMin, setBreakMin] = useState(saved?.breakMin || 5);
+  const [phase, setPhase]       = useState(saved?.phase || "work");
+  const [sessions, setSessions] = useState(saved?.sessions || 0);
+  const [selectedGoal, setSelectedGoal] = useState(saved?.selectedGoal || null);
+  const [showGoalPicker, setShowGoalPicker] = useState(false);
+  const [sessionLog, setSessionLog] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("injaz-pomo-log")) || []; } catch { return []; }
+  });
+
+  // Compute remaining secs from saved start time
+  const getRemaining = () => {
+    const s = loadPomo();
+    if(s?.isRunning && s?.startedAt) {
+      const elapsed = Math.floor((Date.now() - s.startedAt) / 1000);
+      const total = s.phase==="work" ? s.workMin*60 : s.breakMin*60;
+      return Math.max(0, total - elapsed);
+    }
+    return saved?.secs ?? (saved?.workMin||25)*60;
+  };
+
+  const [secs, setSecs] = useState(getRemaining);
+  const [isRunning, setIsRunning] = useState(()=>{
+    const s=loadPomo();
+    if(s?.isRunning && s?.startedAt){
+      const elapsed=Math.floor((Date.now()-s.startedAt)/1000);
+      const total=(s.phase==="work"?s.workMin:s.breakMin)*60;
+      return elapsed < total;
+    }
+    return false;
+  });
+
   const intervalRef = useRef(null);
-  const startTimeRef = useRef(null);   // real clock when started
-  const startSecsRef = useRef(25*60);  // secs remaining when started
   const totalSecs = phase==="work" ? workMin*60 : breakMin*60;
+
+  // Save state to localStorage on every change
+  useEffect(()=>{
+    const s = loadPomo() || {};
+    savePomo({ ...s, workMin, breakMin, phase, sessions, secs, isRunning,
+      startedAt: isRunning ? (s.startedAt || Date.now()) : null,
+      selectedGoal
+    });
+  },[workMin,breakMin,phase,sessions,secs,isRunning,selectedGoal]);
 
   useEffect(()=>{
     if(!isRunning) return;
 
-    // Record real start time
-    startTimeRef.current = Date.now();
-    startSecsRef.current = secs;
+    // Make sure startedAt is saved
+    const s = loadPomo() || {};
+    if(!s.startedAt) {
+      savePomo({...s, startedAt: Date.now(), isRunning: true});
+    }
 
-    function tick() {
-      const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
-      const remaining = startSecsRef.current - elapsed;
+    function tick(){
+      const state = loadPomo();
+      if(!state?.startedAt) return;
+      const elapsed = Math.floor((Date.now() - state.startedAt) / 1000);
+      const total = state.phase==="work" ? state.workMin*60 : state.breakMin*60;
+      const remaining = Math.max(0, total - elapsed);
+      setSecs(remaining);
 
       if(remaining <= 0){
         clearInterval(intervalRef.current);
-        setSecs(0);
-        if(phase==="work"){
-          addNotif({type:"success",icon:"🍅",title:"انتهت جلسة التركيز!",msg:"خذ استراحة"});
-          onSession(workMin); setSessions(p=>p+1); setPhase("break");
-          setSecs(breakMin*60); startSecsRef.current=breakMin*60;
+        if(state.phase==="work"){
+          const newSessions = (state.sessions||0)+1;
+          addNotif({type:"success",icon:"🍅",title:"انتهت جلسة التركيز!",msg:state.selectedGoal?`الهدف: ${state.selectedGoal.title}`:"خذ استراحة"});
+          onSession(state.workMin);
+          setSessions(newSessions);
+          // Log session
+          const log = [{
+            id: Date.now(),
+            goalId: state.selectedGoal?.id,
+            goalTitle: state.selectedGoal?.title,
+            goalColor: state.selectedGoal?.color,
+            mins: state.workMin,
+            date: new Date().toLocaleDateString("ar-EG",{day:"numeric",month:"short"}),
+            time: new Date().toLocaleTimeString("ar",{hour:"2-digit",minute:"2-digit"}),
+          }, ...((JSON.parse(localStorage.getItem("injaz-pomo-log"))||[]).slice(0,29))];
+          localStorage.setItem("injaz-pomo-log", JSON.stringify(log));
+          setSessionLog(log);
+          setPhase("break");
+          setSecs(state.breakMin*60);
+          savePomo({...state, phase:"break", sessions:newSessions, secs:state.breakMin*60, startedAt:Date.now()});
         } else {
           addNotif({type:"info",icon:"💪",title:"انتهت الاستراحة!",msg:"جاهز للجولة التالية؟"});
-          setPhase("work"); setSecs(workMin*60); startSecsRef.current=workMin*60;
+          setPhase("work");
+          setSecs(state.workMin*60);
+          savePomo({...state, phase:"work", secs:state.workMin*60, startedAt:Date.now()});
         }
-        startTimeRef.current = Date.now();
         setIsRunning(false);
-        return;
+        savePomo({...loadPomo(), isRunning:false, startedAt:null});
       }
-      setSecs(remaining);
     }
 
-    intervalRef.current = setInterval(tick, 500); // check every 500ms
-    tick(); // immediate first tick
+    intervalRef.current = setInterval(tick, 500);
+    tick();
     return ()=>clearInterval(intervalRef.current);
-  },[isRunning,phase,workMin,breakMin]);
+  },[isRunning]);
 
-  // Handle visibility change — recalculate when screen comes back
+  // Visibility change — recalc on return
   useEffect(()=>{
     function onVisible(){
-      if(!isRunning || !startTimeRef.current) return;
-      const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
-      const remaining = Math.max(0, startSecsRef.current - elapsed);
-      setSecs(remaining);
+      if(document.visibilityState!=="visible") return;
+      const state=loadPomo();
+      if(state?.isRunning && state?.startedAt){
+        const elapsed=Math.floor((Date.now()-state.startedAt)/1000);
+        const total=(state.phase==="work"?state.workMin:state.breakMin)*60;
+        const remaining=Math.max(0,total-elapsed);
+        setSecs(remaining);
+        if(remaining<=0) setIsRunning(false);
+      }
     }
-    document.addEventListener("visibilitychange", onVisible);
-    return ()=>document.removeEventListener("visibilitychange", onVisible);
-  },[isRunning]);
+    document.addEventListener("visibilitychange",onVisible);
+    return ()=>document.removeEventListener("visibilitychange",onVisible);
+  },[]);
+
+  function handleStart(){
+    if(!selectedGoal){ setShowGoalPicker(true); return; }
+    const s=loadPomo()||{};
+    savePomo({...s,isRunning:true,startedAt:Date.now(),phase,workMin,breakMin,sessions,selectedGoal});
+    setIsRunning(true);
+  }
+
+  function handlePause(){
+    clearInterval(intervalRef.current);
+    setIsRunning(false);
+    const s=loadPomo()||{};
+    savePomo({...s,isRunning:false,startedAt:null,secs});
+  }
+
+  function handleReset(){
+    clearInterval(intervalRef.current);
+    setIsRunning(false);
+    setPhase("work");
+    setSecs(workMin*60);
+    savePomo({workMin,breakMin,phase:"work",sessions,secs:workMin*60,isRunning:false,startedAt:null,selectedGoal});
+  }
 
   const mins=Math.floor(secs/60).toString().padStart(2,"0");
   const sec2=(secs%60).toString().padStart(2,"0");
@@ -884,45 +976,145 @@ function PomodoroPage({ onSession, addNotif }) {
 
   return(
     <div className="page">
-      <div className="section-title" style={{justifyContent:"center",fontSize:20,marginBottom:24}}><span>🍅</span> مؤقت بومودورو</div>
-      <div className="card" style={{maxWidth:480,margin:"0 auto 20px"}}>
-        <div style={{textAlign:"center"}}>
-          <div className="tabs" style={{maxWidth:240,margin:"0 auto 24px"}}>
-            <div className={`tab ${phase==="work"?"active":""}`} onClick={()=>{setPhase("work");setSecs(workMin*60);setIsRunning(false);}}>عمل</div>
-            <div className={`tab ${phase==="break"?"active":""}`} onClick={()=>{setPhase("break");setSecs(breakMin*60);setIsRunning(false);}}>راحة</div>
-          </div>
-          <div style={{position:"relative",width:220,height:220,margin:"0 auto 24px"}}>
-            <svg width="220" height="220" viewBox="0 0 220 220" style={{transform:"rotate(-90deg)"}}>
-              <circle className="pomo-circle-bg" cx="110" cy="110" r="90"/>
-              <circle cx="110" cy="110" r="90" fill="none" stroke={strokeColor} strokeWidth="8" strokeLinecap="round" strokeDasharray={circum} strokeDashoffset={dashOffset} style={{filter:`drop-shadow(0 0 12px ${phase==="work"?"rgba(124,110,240,0.5)":"rgba(16,185,129,0.5)"})`}}/>
-            </svg>
-            <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center"}}>
-              <div style={{fontFamily:"Tajawal,sans-serif",fontSize:44,fontWeight:900,lineHeight:1,color:strokeColor}}>{mins}:{sec2}</div>
-              <div style={{fontSize:12,color:"var(--text2)",marginTop:4}}>{phase==="work"?"🎯 وقت التركيز":"☕ وقت الراحة"}</div>
-            </div>
-          </div>
-          <div style={{display:"flex",justifyContent:"center",gap:12,marginBottom:20}}>
-            <button className="pomo-btn pomo-btn-secondary" onClick={()=>{setIsRunning(false);setPhase("work");setSecs(workMin*60);}}>↺</button>
-            <button className="pomo-btn pomo-btn-main" onClick={()=>setIsRunning(p=>!p)}>{isRunning?"⏸":"▶"}</button>
-            <button className="pomo-btn pomo-btn-secondary" onClick={()=>{setPhase(phase==="work"?"break":"work");setSecs(phase==="work"?breakMin*60:workMin*60);setIsRunning(false);}}>⏭</button>
-          </div>
-          <div style={{marginBottom:16}}>
-            <div style={{fontSize:12,color:"var(--text2)",marginBottom:8}}>جلسات اليوم: <strong style={{color:"var(--accent2)"}}>{sessions}</strong></div>
-            <div style={{display:"flex",justifyContent:"center",gap:6}}>{[...Array(8)].map((_,i)=><div key={i} className={`pomo-dot ${i<sessions?"done":""}`}/>)}</div>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-            {[["workMin","⏱️ دقائق العمل",workMin,setWorkMin],["breakMin","☕ دقائق الراحة",breakMin,setBreakMin]].map(([k,lbl,val,setter])=>(
-              <div key={k} style={{background:"var(--bg3)",border:"1px solid var(--border)",borderRadius:12,padding:12,textAlign:"center"}}>
-                <div style={{fontSize:11,color:"var(--text2)",marginBottom:6}}>{lbl}</div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-                  <div onClick={()=>setter(p=>Math.max(1,p-1))} style={{width:24,height:24,borderRadius:6,background:"var(--bg4)",border:"1px solid var(--border)",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text2)"}}>−</div>
-                  <div style={{fontSize:20,fontWeight:700,fontFamily:"Tajawal,sans-serif"}}>{val}</div>
-                  <div onClick={()=>setter(p=>Math.min(90,p+1))} style={{width:24,height:24,borderRadius:6,background:"var(--bg4)",border:"1px solid var(--border)",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text2)"}}>+</div>
+      <div className="section-title" style={{justifyContent:"center",fontSize:20,marginBottom:20}}><span>🍅</span> مؤقت بومودورو</div>
+
+      {/* Goal picker modal */}
+      {showGoalPicker && (
+        <div className="modal-overlay" onClick={()=>setShowGoalPicker(false)}>
+          <div className="modal" style={{maxWidth:400}} onClick={e=>e.stopPropagation()}>
+            <div className="modal-title">🎯 اختر هدف الجلسة</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+              {goals.filter(g=>g.status==="active").map(g=>(
+                <div key={g.id} onClick={()=>{setSelectedGoal(g);setShowGoalPicker(false);const s=loadPomo()||{};savePomo({...s,selectedGoal:g,isRunning:true,startedAt:Date.now(),phase,workMin,breakMin,sessions});setIsRunning(true);}} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderRadius:12,cursor:"pointer",background:"var(--bg3)",border:"1px solid var(--border)",transition:"all 0.2s"}}
+                  onMouseEnter={e=>e.currentTarget.style.borderColor=g.color}
+                  onMouseLeave={e=>e.currentTarget.style.borderColor="var(--border)"}>
+                  <div style={{width:12,height:12,borderRadius:"50%",background:g.color,flexShrink:0}}/>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:14,fontWeight:600}}>{g.title}</div>
+                    <div style={{fontSize:11,color:"var(--text2)",marginTop:2}}>{g.category||"عام"} • {g.progress}%</div>
+                  </div>
+                  <ProgressBar pct={g.progress} color={g.color} h={4}/>
                 </div>
-              </div>
-            ))}
+              ))}
+              {goals.filter(g=>g.status==="active").length===0&&<div style={{textAlign:"center",padding:"20px 0",color:"var(--text3)"}}>لا أهداف نشطة — أضف هدفاً أولاً</div>}
+            </div>
+            <button className="btn btn-ghost" style={{width:"100%",justifyContent:"center"}} onClick={()=>setShowGoalPicker(false)}>إلغاء</button>
           </div>
         </div>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,maxWidth:900,margin:"0 auto"}}>
+
+        {/* Timer */}
+        <div className="card">
+          <div style={{textAlign:"center"}}>
+            {/* Selected goal badge */}
+            <div style={{marginBottom:16,minHeight:32}}>
+              {selectedGoal ? (
+                <div style={{display:"inline-flex",alignItems:"center",gap:8,padding:"6px 14px",borderRadius:20,background:`${selectedGoal.color}18`,border:`1px solid ${selectedGoal.color}40`,cursor:"pointer"}} onClick={()=>!isRunning&&setShowGoalPicker(true)}>
+                  <div style={{width:8,height:8,borderRadius:"50%",background:selectedGoal.color}}/>
+                  <span style={{fontSize:12,fontWeight:600,color:selectedGoal.color}}>{selectedGoal.title}</span>
+                  {!isRunning&&<span style={{fontSize:10,color:"var(--text3)"}}>✎</span>}
+                </div>
+              ) : (
+                <div style={{fontSize:12,color:"var(--text3)"}}>اختر هدفاً قبل البدء</div>
+              )}
+            </div>
+
+            <div className="tabs" style={{maxWidth:200,margin:"0 auto 20px"}}>
+              <div className={`tab ${phase==="work"?"active":""}`} onClick={()=>{if(!isRunning){setPhase("work");setSecs(workMin*60);}}}>عمل</div>
+              <div className={`tab ${phase==="break"?"active":""}`} onClick={()=>{if(!isRunning){setPhase("break");setSecs(breakMin*60);}}}>راحة</div>
+            </div>
+
+            <div style={{position:"relative",width:200,height:200,margin:"0 auto 20px"}}>
+              <svg width="200" height="200" viewBox="0 0 220 220" style={{transform:"rotate(-90deg)"}}>
+                <circle className="pomo-circle-bg" cx="110" cy="110" r="90"/>
+                <circle cx="110" cy="110" r="90" fill="none" stroke={strokeColor} strokeWidth="8" strokeLinecap="round" strokeDasharray={circum} strokeDashoffset={dashOffset} style={{filter:`drop-shadow(0 0 12px ${phase==="work"?"rgba(124,110,240,0.5)":"rgba(16,185,129,0.5)"})`}}/>
+              </svg>
+              <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center"}}>
+                <div style={{fontFamily:"Tajawal,sans-serif",fontSize:42,fontWeight:900,lineHeight:1,color:strokeColor}}>{mins}:{sec2}</div>
+                <div style={{fontSize:11,color:"var(--text2)",marginTop:4}}>{phase==="work"?"🎯 تركيز":"☕ راحة"}</div>
+              </div>
+            </div>
+
+            <div style={{display:"flex",justifyContent:"center",gap:12,marginBottom:16}}>
+              <button className="pomo-btn pomo-btn-secondary" onClick={handleReset} title="إعادة">↺</button>
+              <button className="pomo-btn pomo-btn-main" onClick={isRunning?handlePause:handleStart}>{isRunning?"⏸":"▶"}</button>
+              <button className="pomo-btn pomo-btn-secondary" onClick={()=>{if(!isRunning){setPhase(phase==="work"?"break":"work");setSecs(phase==="work"?breakMin*60:workMin*60);}}} title="تخطي">⏭</button>
+            </div>
+
+            {!isRunning&&!selectedGoal&&(
+              <div style={{background:"rgba(124,110,240,0.08)",border:"1px solid rgba(124,110,240,0.2)",borderRadius:10,padding:"10px 14px",fontSize:12,color:"var(--accent2)",marginBottom:12}}>
+                ⚠️ اضغط ▶ لاختيار الهدف والبدء
+              </div>
+            )}
+
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:11,color:"var(--text2)",marginBottom:6}}>جلسات اليوم: <strong style={{color:"var(--accent2)"}}>{sessions}</strong></div>
+              <div style={{display:"flex",justifyContent:"center",gap:5}}>{[...Array(8)].map((_,i)=><div key={i} className={`pomo-dot ${i<sessions?"done":""}`}/>)}</div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              {[["⏱️ عمل",workMin,setWorkMin],["☕ راحة",breakMin,setBreakMin]].map(([lbl,val,setter])=>(
+                <div key={lbl} style={{background:"var(--bg3)",border:"1px solid var(--border)",borderRadius:10,padding:10,textAlign:"center"}}>
+                  <div style={{fontSize:10,color:"var(--text2)",marginBottom:5}}>{lbl} (دقيقة)</div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                    <div onClick={()=>{if(!isRunning)setter(p=>Math.max(1,p-1));}} style={{width:22,height:22,borderRadius:6,background:"var(--bg4)",border:"1px solid var(--border)",cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text2)"}}>−</div>
+                    <div style={{fontSize:18,fontWeight:700,fontFamily:"Tajawal,sans-serif"}}>{val}</div>
+                    <div onClick={()=>{if(!isRunning)setter(p=>Math.min(90,p+1));}} style={{width:22,height:22,borderRadius:6,background:"var(--bg4)",border:"1px solid var(--border)",cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text2)"}}>+</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Session log */}
+        <div className="card">
+          <div className="section-title" style={{marginBottom:16}}><span>📊</span> سجل الجلسات</div>
+          {sessionLog.length===0?(
+            <div style={{textAlign:"center",padding:"30px 0",color:"var(--text3)"}}>
+              <div style={{fontSize:32,marginBottom:8}}>🍅</div>
+              <div style={{fontSize:13}}>لا جلسات بعد — ابدأ مؤقتك الأول!</div>
+            </div>
+          ):(
+            <div style={{maxHeight:420,overflowY:"auto"}}>
+              {sessionLog.map((s,i)=>(
+                <div key={s.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:10,background:"var(--bg3)",border:"1px solid var(--border)",marginBottom:8}}>
+                  <div style={{width:36,height:36,borderRadius:10,background:s.goalColor?`${s.goalColor}20`:"var(--bg4)",border:`1px solid ${s.goalColor||"var(--border)"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🍅</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:600,color:s.goalColor||"var(--text)"}}>
+                      {s.goalTitle||"بدون هدف"}
+                    </div>
+                    <div style={{fontSize:11,color:"var(--text2)",marginTop:2}}>
+                      {s.date} • {s.time} • {s.mins} دقيقة
+                    </div>
+                  </div>
+                  <div style={{fontSize:11,padding:"3px 8px",borderRadius:20,background:"rgba(124,110,240,0.1)",color:"var(--accent2)",fontWeight:600,flexShrink:0}}>
+                    #{sessionLog.length-i}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {sessionLog.length>0&&(
+            <div style={{marginTop:12,padding:"10px 14px",background:"var(--bg3)",borderRadius:10,border:"1px solid var(--border)"}}>
+              <div style={{fontSize:11,color:"var(--text2)",marginBottom:8,fontWeight:600}}>⏱️ إجمالي وقت التركيز</div>
+              {Object.entries(sessionLog.reduce((acc,s)=>{
+                const key=s.goalTitle||"بدون هدف";
+                const color=s.goalColor||"var(--text2)";
+                if(!acc[key]) acc[key]={mins:0,color};
+                acc[key].mins+=s.mins; return acc;
+              },{})).map(([goal,{mins,color}])=>(
+                <div key={goal} style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:11,color}}>{goal}</span>
+                  <span style={{fontSize:11,fontWeight:700,color}}>{Math.floor(mins/60)}س {mins%60}د</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   );
@@ -1227,7 +1419,7 @@ export default function App() {
           {page==="dashboard"&&<DashboardPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} pomodoroSessions={pomodoroSessions} todayFocus={todayFocus} addNotif={addNotif}/>}
           {page==="goals"&&<GoalsPage goals={goals} setGoals={setGoals} addNotif={addNotif}/>}
           {page==="tasks"&&<TasksPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} addNotif={addNotif}/>}
-          {page==="pomodoro"&&<PomodoroPage onSession={onPomodoroSession} addNotif={addNotif}/>}
+          {page==="pomodoro"&&<PomodoroPage onSession={onPomodoroSession} addNotif={addNotif} goals={goals}/>}
           {page==="stats"&&<StatsPage tasks={tasks} goals={goals} pomodoroSessions={pomodoroSessions} todayFocus={todayFocus}/>}
           {page==="ai"&&<AIPage tasks={tasks} goals={goals} addNotif={addNotif}/>}
         </div>
