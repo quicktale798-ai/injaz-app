@@ -791,7 +791,7 @@ function TasksPage({ tasks, setTasks, goals, setGoals, addNotif }) {
           <div key={t.id} className={`task-item ${t.done?"done":""}`}>
             <div className={`task-check ${t.done?"done":t.priority}`} onClick={()=>toggleTask(t.id)}>{t.done?"✓":""}</div>
             <div style={{flex:1,minWidth:0}}>
-              <div className={`task-title ${t.done?"done":""}`}>{t.title}</div>
+              <div className={`task-title ${t.done?"done":""}`} style={{cursor:"default"}}>{t.title}</div>
               <div className="task-meta">
                 <span className={`badge ${t.priority}`}>{t.priority==="high"?"🔴 عالية":t.priority==="medium"?"🟡 متوسطة":"🔵 منخفضة"}</span>
                 {goal&&<span className="badge goal" style={{background:`${goal.color}20`,color:goal.color}}>🎯 {goal.title}</span>}
