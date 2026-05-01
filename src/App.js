@@ -196,7 +196,7 @@ function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset}) 
   // In RTL layout, grid starts from RIGHT automatically
   // days[0]=Sat should appear on RIGHT, days[6]=Fri on LEFT
   // So we DON'T reverse - RTL CSS handles it
-  const displayDays = days;
+  const displayDays = [...days].reverse(); // reversed so RTL renders Sat→Fri correctly
 
   // Tasks for selected day
   const selTasks = tasks.filter(t => t.date === selDay)
