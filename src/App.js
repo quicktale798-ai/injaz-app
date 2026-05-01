@@ -271,6 +271,16 @@ function ThisWeekPage({tasks,setTasks,goals,setGoals,addNotif,weekOffset}){
     </div>
   );
 }
+// ── GOAL FORM (standalone) ───────────────────────────────────
+function GoalForm({form, setForm}){
+  return(<>
+    <div style={{marginBottom:12}}><label className="fl">عنوان الهدف *</label><input className="fi" value={form.title||""} onChange={e=>setForm(p=>({...p,title:e.target.value}))} placeholder="مثال: قراءة 12 كتاب"/></div>
+    <div className="fr"><div style={{marginBottom:12}}><label className="fl">الفئة</label><input className="fi" value={form.category||""} onChange={e=>setForm(p=>({...p,category:e.target.value}))} placeholder="تعليم، صحة..."/></div><div style={{marginBottom:12}}><label className="fl">الحالة</label><select className="fs" value={form.status||"active"} onChange={e=>setForm(p=>({...p,status:e.target.value}))}><option value="active">نشط</option><option value="paused">متوقف</option><option value="done">مكتمل</option></select></div></div>
+    <div className="fr"><div style={{marginBottom:12}}><label className="fl">البداية</label><input type="date" className="fi" value={form.startDate||""} onChange={e=>setForm(p=>({...p,startDate:e.target.value}))}/></div><div style={{marginBottom:12}}><label className="fl">النهاية</label><input type="date" className="fi" value={form.endDate||""} onChange={e=>setForm(p=>({...p,endDate:e.target.value}))}/></div></div>
+    <div style={{marginBottom:12}}><label className="fl">اللون</label><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{COLORS.map(c=><div key={c} onClick={()=>setForm(p=>({...p,color:c}))} style={{width:24,height:24,borderRadius:6,background:c,cursor:"pointer",border:(form.color||"#6366f1")===c?"3px solid white":"2px solid transparent",transition:"all .15s"}}/>)}</div></div>
+  </>);
+}
+
 // ── GOALS PAGE ───────────────────────────────────────────────
 function GoalsPage({goals,setGoals,tasks,addNotif,weekOffset}){
   const [showAdd,setShowAdd]=useState(false);
@@ -289,13 +299,6 @@ function GoalsPage({goals,setGoals,tasks,addNotif,weekOffset}){
   async function toggleSub(gid,sid){const g=goals.find(x=>x.id===gid);if(!g)return;const upd=g.subtasks.map(s=>s.id===sid?{...s,done:!s.done}:s);const prog=upd.length?Math.round(upd.filter(s=>s.done).length/upd.length*100):g.progress;await supabase.from("goals").update({subtasks:upd,progress:prog}).eq("id",gid);setGoals(p=>p.map(x=>x.id===gid?{...x,subtasks:upd,progress:prog}:x));}
   async function addSub(gid){if(!ns.trim())return;const g=goals.find(x=>x.id===gid);if(!g)return;const upd=[...(g.subtasks||[]),{id:Date.now(),title:ns,done:false}];await supabase.from("goals").update({subtasks:upd}).eq("id",gid);setGoals(p=>p.map(x=>x.id===gid?{...x,subtasks:upd}:x));setNs("");}
   async function delSub(gid,sid){const g=goals.find(x=>x.id===gid);if(!g)return;const upd=g.subtasks.filter(s=>s.id!==sid);const prog=upd.length?Math.round(upd.filter(s=>s.done).length/upd.length*100):g.progress;await supabase.from("goals").update({subtasks:upd,progress:prog}).eq("id",gid);setGoals(p=>p.map(x=>x.id===gid?{...x,subtasks:upd,progress:prog}:x));}
-
-  const GF=({form,setForm})=>(<>
-    <div style={{marginBottom:12}}><label className="fl">عنوان الهدف *</label><input className="fi" value={form.title||""} onChange={e=>setForm(p=>({...p,title:e.target.value}))} placeholder="مثال: قراءة 12 كتاب"/></div>
-    <div className="fr"><div style={{marginBottom:12}}><label className="fl">الفئة</label><input className="fi" value={form.category||""} onChange={e=>setForm(p=>({...p,category:e.target.value}))} placeholder="تعليم، صحة..."/></div><div style={{marginBottom:12}}><label className="fl">الحالة</label><select className="fs" value={form.status||"active"} onChange={e=>setForm(p=>({...p,status:e.target.value}))}><option value="active">نشط</option><option value="paused">متوقف</option><option value="done">مكتمل</option></select></div></div>
-    <div className="fr"><div style={{marginBottom:12}}><label className="fl">البداية</label><input type="date" className="fi" value={form.startDate||""} onChange={e=>setForm(p=>({...p,startDate:e.target.value}))}/></div><div style={{marginBottom:12}}><label className="fl">النهاية</label><input type="date" className="fi" value={form.endDate||""} onChange={e=>setForm(p=>({...p,endDate:e.target.value}))}/></div></div>
-    <div style={{marginBottom:12}}><label className="fl">اللون</label><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{COLORS.map(c=><div key={c} onClick={()=>setForm(p=>({...p,color:c}))} style={{width:24,height:24,borderRadius:6,background:c,cursor:"pointer",border:(form.color||"#6366f1")===c?"3px solid white":"2px solid transparent",transition:"all .15s"}}/>)}</div></div>
-  </>);
 
   return(<div className="page">
     <div className="sh"><div className="st">🎯 الأهداف</div><button className="btn bp bsm" onClick={()=>setShowAdd(true)}>+ هدف جديد</button></div>
@@ -342,11 +345,24 @@ function GoalsPage({goals,setGoals,tasks,addNotif,weekOffset}){
         </div>)}
       </div>);
     })}
-    <Modal open={showAdd} onClose={()=>setShowAdd(false)} title="إنشاء هدف جديد" icon="🎯"><GF form={aF} setForm={setAF}/><div style={{display:"flex",gap:7,justifyContent:"flex-end",marginTop:14}}><button className="btn bg" onClick={()=>setShowAdd(false)}>إلغاء</button><button className="btn bp" onClick={addGoal}>إنشاء ✨</button></div></Modal>
-    <Modal open={!!editG} onClose={()=>setEditG(null)} title="تعديل الهدف" icon="✏️"><GF form={eF} setForm={setEF}/><div style={{display:"flex",gap:7,justifyContent:"flex-end",marginTop:14}}><button className="btn bg" onClick={()=>setEditG(null)}>إلغاء</button><button className="btn bp" onClick={saveEdit}>حفظ ✅</button></div></Modal>
+    <Modal open={showAdd} onClose={()=>setShowAdd(false)} title="إنشاء هدف جديد" icon="🎯"><GoalForm form={aF} setForm={setAF}/><div style={{display:"flex",gap:7,justifyContent:"flex-end",marginTop:14}}><button className="btn bg" onClick={()=>setShowAdd(false)}>إلغاء</button><button className="btn bp" onClick={addGoal}>إنشاء ✨</button></div></Modal>
+    <Modal open={!!editG} onClose={()=>setEditG(null)} title="تعديل الهدف" icon="✏️"><GoalForm form={eF} setForm={setEF}/><div style={{display:"flex",gap:7,justifyContent:"flex-end",marginTop:14}}><button className="btn bg" onClick={()=>setEditG(null)}>إلغاء</button><button className="btn bp" onClick={saveEdit}>حفظ ✅</button></div></Modal>
     <Confirm open={!!delG} onClose={()=>setDelG(null)} onOk={doDelete} title="حذف الهدف" msg={`حذف "${delG?.title}"؟`}/>
   </div>);
 }
+// ── TASK FORM (standalone to prevent re-mount on each keystroke) ──
+function TaskForm({form, setForm, goals}){
+  const today = toDay();
+  return(<>
+    <div style={{marginBottom:11}}><label className="fl">عنوان المهمة *</label><input className="fi" value={form.title||""} onChange={e=>setForm(p=>({...p,title:e.target.value}))} placeholder="ما الذي تريد إنجازه؟"/></div>
+    <div className="fr"><div style={{marginBottom:11}}><label className="fl">الأولوية</label><select className="fs" value={form.priority||"medium"} onChange={e=>setForm(p=>({...p,priority:e.target.value}))}><option value="high">🔴 عالية</option><option value="medium">🟡 متوسطة</option><option value="low">🔵 منخفضة</option></select></div><div style={{marginBottom:11}}><label className="fl">التاريخ</label><input type="date" className="fi" value={form.date||today} onChange={e=>setForm(p=>({...p,date:e.target.value}))}/></div></div>
+    <div className="fr"><div style={{marginBottom:11}}><label className="fl">⏰ وقت التذكير</label><input type="time" className="fi" value={form.time||""} onChange={e=>setForm(p=>({...p,time:e.target.value}))}/></div><div style={{marginBottom:11}}><label className="fl">🔁 التكرار</label><select className="fs" value={form.repeat||"none"} onChange={e=>setForm(p=>({...p,repeat:e.target.value,weekDays:[]}))}><option value="none">لا تكرار</option><option value="daily">🔁 يومي</option><option value="weekly">📆 أسبوعي</option><option value="monthly">🗓️ شهري</option></select></div></div>
+    {form.repeat==="weekly"&&<div style={{marginBottom:11}}><label className="fl">أيام الأسبوع</label><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{WD.map((d,i)=>{const s=(form.weekDays||[]).includes(i);return<div key={i} onClick={()=>setForm(p=>({...p,weekDays:s?p.weekDays.filter(x=>x!==i):[...(p.weekDays||[]),i]}))} style={{padding:"4px 9px",borderRadius:17,fontSize:11,fontWeight:600,cursor:"pointer",background:s?"var(--a)":"var(--bg3)",border:`1px solid ${s?"var(--a)":"var(--brd)"}`,color:s?"white":"var(--t2)",transition:"all .15s"}}>{d}</div>;})}  </div></div>}
+    <div style={{marginBottom:11}}><label className="fl">ربط بهدف</label><select className="fs" value={form.goalId||""} onChange={e=>setForm(p=>({...p,goalId:e.target.value}))}><option value="">بدون هدف</option>{goals.map(g=><option key={g.id} value={g.id}>{g.title}</option>)}</select></div>
+    <div style={{marginBottom:4}}><label className="fl">📝 ملاحظات</label><textarea className="fta" value={form.note||""} onChange={e=>setForm(p=>({...p,note:e.target.value}))} placeholder="اختياري..." style={{minHeight:55}}/></div>
+  </>);
+}
+
 // ── TASKS PAGE ───────────────────────────────────────────────
 function TasksPage({tasks,setTasks,goals,setGoals,addNotif}){
   const [filter,setFilter]=useState("today");
@@ -406,15 +422,6 @@ function TasksPage({tasks,setTasks,goals,setGoals,addNotif}){
     return true;
   }).sort((a,b)=>(a.done?1:-1)||({"high":0,"medium":1,"low":2}[a.priority]??1)-({"high":0,"medium":1,"low":2}[b.priority]??1));
 
-  const TF=({form,setForm})=>(<>
-    <div style={{marginBottom:11}}><label className="fl">عنوان المهمة *</label><input className="fi" value={form.title||""} onChange={e=>setForm(p=>({...p,title:e.target.value}))} placeholder="ما الذي تريد إنجازه؟"/></div>
-    <div className="fr"><div style={{marginBottom:11}}><label className="fl">الأولوية</label><select className="fs" value={form.priority||"medium"} onChange={e=>setForm(p=>({...p,priority:e.target.value}))}><option value="high">🔴 عالية</option><option value="medium">🟡 متوسطة</option><option value="low">🔵 منخفضة</option></select></div><div style={{marginBottom:11}}><label className="fl">التاريخ</label><input type="date" className="fi" value={form.date||today} onChange={e=>setForm(p=>({...p,date:e.target.value}))}/></div></div>
-    <div className="fr"><div style={{marginBottom:11}}><label className="fl">⏰ وقت التذكير</label><input type="time" className="fi" value={form.time||""} onChange={e=>setForm(p=>({...p,time:e.target.value}))}/></div><div style={{marginBottom:11}}><label className="fl">🔁 التكرار</label><select className="fs" value={form.repeat||"none"} onChange={e=>setForm(p=>({...p,repeat:e.target.value,weekDays:[]}))}><option value="none">لا تكرار</option><option value="daily">🔁 يومي</option><option value="weekly">📆 أسبوعي</option><option value="monthly">🗓️ شهري</option></select></div></div>
-    {form.repeat==="weekly"&&<div style={{marginBottom:11}}><label className="fl">أيام الأسبوع</label><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{WD.map((d,i)=>{const s=(form.weekDays||[]).includes(i);return<div key={i} onClick={()=>setForm(p=>({...p,weekDays:s?p.weekDays.filter(x=>x!==i):[...(p.weekDays||[]),i]}))} style={{padding:"4px 9px",borderRadius:17,fontSize:11,fontWeight:600,cursor:"pointer",background:s?"var(--a)":"var(--bg3)",border:`1px solid ${s?"var(--a)":"var(--brd)"}`,color:s?"white":"var(--t2)",transition:"all .15s"}}>{d}</div>;})}  </div></div>}
-    <div style={{marginBottom:11}}><label className="fl">ربط بهدف</label><select className="fs" value={form.goalId||""} onChange={e=>setForm(p=>({...p,goalId:e.target.value}))}><option value="">بدون هدف</option>{goals.map(g=><option key={g.id} value={g.id}>{g.title}</option>)}</select></div>
-    <div style={{marginBottom:4}}><label className="fl">📝 ملاحظات</label><textarea className="fta" value={form.note||""} onChange={e=>setForm(p=>({...p,note:e.target.value}))} placeholder="اختياري..." style={{minHeight:55}}/></div>
-  </>);
-
   return(<div className="page">
     <div className="sh"><div className="st">📋 المهام</div><button className="btn bp bsm" onClick={()=>setShowAdd(true)}>+ مهمة جديدة</button></div>
     <div style={{display:"flex",gap:4,background:"var(--bg3)",borderRadius:9,padding:3,marginBottom:14,flexWrap:"wrap"}}>
@@ -455,8 +462,8 @@ function TasksPage({tasks,setTasks,goals,setGoals,addNotif}){
         </div>
       </div>);
     })}
-    <Modal open={showAdd} onClose={()=>setShowAdd(false)} title="مهمة جديدة" icon="✅"><TF form={aF} setForm={setAF}/><div style={{display:"flex",gap:7,justifyContent:"flex-end",marginTop:12}}><button className="btn bg" onClick={()=>setShowAdd(false)}>إلغاء</button><button className="btn bp" onClick={addTask}>إضافة</button></div></Modal>
-    <Modal open={!!editT} onClose={()=>setEditT(null)} title="تعديل المهمة" icon="✏️"><TF form={eF} setForm={setEF}/><div style={{display:"flex",gap:7,justifyContent:"flex-end",marginTop:12}}><button className="btn bg" onClick={()=>setEditT(null)}>إلغاء</button><button className="btn bp" onClick={saveEdit}>حفظ ✅</button></div></Modal>
+    <Modal open={showAdd} onClose={()=>setShowAdd(false)} title="مهمة جديدة" icon="✅"><TaskForm form={aF} setForm={setAF} goals={goals}/><div style={{display:"flex",gap:7,justifyContent:"flex-end",marginTop:12}}><button className="btn bg" onClick={()=>setShowAdd(false)}>إلغاء</button><button className="btn bp" onClick={addTask}>إضافة</button></div></Modal>
+    <Modal open={!!editT} onClose={()=>setEditT(null)} title="تعديل المهمة" icon="✏️"><TaskForm form={eF} setForm={setEF} goals={goals}/><div style={{display:"flex",gap:7,justifyContent:"flex-end",marginTop:12}}><button className="btn bg" onClick={()=>setEditT(null)}>إلغاء</button><button className="btn bp" onClick={saveEdit}>حفظ ✅</button></div></Modal>
     <Confirm open={!!delT} onClose={()=>setDelT(null)} onOk={doDelete} title="حذف المهمة" msg={`حذف "${delT?.title}"؟`}/>
   </div>);
 }
