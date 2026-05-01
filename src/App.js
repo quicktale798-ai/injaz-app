@@ -483,6 +483,26 @@ function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset}) 
 }
 
 
+// ── GOAL FORM ────────────────────────────────────────────────
+function GoalForm({form, setForm}) {
+  return (<>
+    <div style={{marginBottom:12}}><label className="fl">عنوان الهدف *</label><input className="fi" value={form.title||""} onChange={e=>setForm(p=>({...p,title:e.target.value}))} placeholder="مثال: قراءة 12 كتاب هذا العام"/></div>
+    <div className="fr">
+      <div style={{marginBottom:12}}><label className="fl">الفئة</label><input className="fi" value={form.category||""} onChange={e=>setForm(p=>({...p,category:e.target.value}))} placeholder="تعليم، صحة، مال..."/></div>
+      <div style={{marginBottom:12}}><label className="fl">الحالة</label><select className="fs" value={form.status||"active"} onChange={e=>setForm(p=>({...p,status:e.target.value}))}><option value="active">🟢 نشط</option><option value="paused">⏸️ متوقف</option><option value="done">✅ مكتمل</option></select></div>
+    </div>
+    <div className="fr">
+      <div style={{marginBottom:12}}><label className="fl">تاريخ البداية</label><input type="date" className="fi" value={form.startDate||""} onChange={e=>setForm(p=>({...p,startDate:e.target.value}))}/></div>
+      <div style={{marginBottom:12}}><label className="fl">تاريخ النهاية</label><input type="date" className="fi" value={form.endDate||""} onChange={e=>setForm(p=>({...p,endDate:e.target.value}))}/></div>
+    </div>
+    <div style={{marginBottom:4}}><label className="fl">اللون</label>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
+        {COLORS.map(c=><div key={c} onClick={()=>setForm(p=>({...p,color:c}))} style={{width:26,height:26,borderRadius:7,background:c,cursor:"pointer",border:(form.color||"#6366f1")===c?"3px solid white":"2px solid transparent",transition:"all .15s",boxShadow:(form.color||"#6366f1")===c?`0 0 8px ${c}`:"none"}}/>)}
+      </div>
+    </div>
+  </>);
+}
+
 // ── GOALS PAGE ───────────────────────────────────────────────
 function GoalsPage({goals,setGoals,tasks,addNotif,weekOffset}){
   const [showAdd,setShowAdd]=useState(false);
@@ -503,7 +523,7 @@ function GoalsPage({goals,setGoals,tasks,addNotif,weekOffset}){
   async function delSub(gid,sid){const g=goals.find(x=>x.id===gid);if(!g)return;const upd=g.subtasks.filter(s=>s.id!==sid);const prog=upd.length?Math.round(upd.filter(s=>s.done).length/upd.length*100):g.progress;await supabase.from("goals").update({subtasks:upd,progress:prog}).eq("id",gid);setGoals(p=>p.map(x=>x.id===gid?{...x,subtasks:upd,progress:prog}:x));}
 
   return(<div className="page">
-    <div className="sh"><div className="st">🎯 الأهداف</div><button className="btn bp bsm" onClick={()=>setShowAdd(true)}>+ هدف جديد</button></div>
+    <div className="sh"><div className="st">🎯 الأهداف</div><button id="quick-add-goal" className="btn bp bsm" onClick={()=>setShowAdd(true)}>+ هدف جديد</button></div>
     <div className="g4" style={{marginBottom:16}}>
       {[
         {i:"🔥",s:"active",l:"نشطة",   c:"var(--a)"},
@@ -637,7 +657,7 @@ function TasksPage({tasks,setTasks,goals,setGoals,addNotif}){
   }).sort((a,b)=>(a.done?1:-1)||({"high":0,"medium":1,"low":2}[a.priority]??1)-({"high":0,"medium":1,"low":2}[b.priority]??1));
 
   return(<div className="page">
-    <div className="sh"><div className="st">📋 المهام</div><button className="btn bp bsm" onClick={()=>setShowAdd(true)}>+ مهمة جديدة</button></div>
+    <div className="sh"><div className="st">📋 المهام</div><button id="quick-add-task" className="btn bp bsm" onClick={()=>setShowAdd(true)}>+ مهمة جديدة</button></div>
     <div style={{display:"flex",gap:3,background:"var(--bg3)",border:"1px solid var(--brd)",borderRadius:11,padding:4,marginBottom:16,flexWrap:"wrap"}}>
       {[["today","📅 اليوم",null],["week","🗓️ الأسبوع",null],["overdue","⚠️ متأخرة",ovCount||null],["done","✅ مكتملة",null],["high","🔴 عالية",null],["all","🔍 الكل",null]].map(([v,l,b])=>(
         <div key={v} onClick={()=>setFilter(v)} style={{flex:1,minWidth:60,textAlign:"center",padding:"7px 6px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",transition:"all .15s",background:filter===v?"var(--a)":"transparent",color:filter===v?"white":"var(--t2)",display:"flex",alignItems:"center",justifyContent:"center",gap:4,boxShadow:filter===v?"0 2px 8px rgba(124,110,240,.3)":"none"}}>
@@ -949,15 +969,27 @@ export default function App(){
             <div style={{fontSize:16,fontWeight:800,fontFamily:"Tajawal",color:"var(--t)"}}>{TITLES[page]}</div>
             <div style={{fontSize:10,color:"var(--t3)",marginTop:1}}>{today.toLocaleDateString("ar-EG",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
           </div>
-          <div style={{display:"flex",gap:7,alignItems:"center"}}>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
             <div className="ib menu-btn" onClick={()=>setSidebarOpen(!sidebarOpen)}>☰</div>
             {dbLoading&&<div className="sp" style={{width:15,height:15}}/>}
+            {/* Quick add task */}
+            <div onClick={()=>{setPage("tasks");setTimeout(()=>document.getElementById("quick-add-task")?.click(),100);}}
+              style={{display:"flex",alignItems:"center",gap:5,padding:"5px 12px",borderRadius:20,background:"rgba(124,110,240,.15)",border:"1px solid rgba(124,110,240,.25)",cursor:"pointer",fontSize:12,fontWeight:700,color:"var(--a2)",transition:"all .15s"}}
+              title="إضافة مهمة">
+              <span style={{fontSize:14}}>✅</span> مهمة
+            </div>
+            {/* Quick add goal */}
+            <div onClick={()=>{setPage("goals");setTimeout(()=>document.getElementById("quick-add-goal")?.click(),100);}}
+              style={{display:"flex",alignItems:"center",gap:5,padding:"5px 12px",borderRadius:20,background:"rgba(16,185,129,.12)",border:"1px solid rgba(16,185,129,.22)",cursor:"pointer",fontSize:12,fontWeight:700,color:"var(--g)",transition:"all .15s"}}
+              title="إضافة هدف">
+              <span style={{fontSize:14}}>🎯</span> هدف
+            </div>
             {todayCount>0&&(
-              <div style={{fontSize:11,padding:"4px 11px",borderRadius:20,background:"linear-gradient(135deg,rgba(124,110,240,.2),rgba(92,79,212,.1))",color:"var(--a2)",fontWeight:700,border:"1px solid rgba(124,110,240,.2)"}}>
-                📋 {todayCount} متبقية
+              <div style={{fontSize:11,padding:"4px 10px",borderRadius:20,background:"linear-gradient(135deg,rgba(124,110,240,.2),rgba(92,79,212,.1))",color:"var(--a2)",fontWeight:700,border:"1px solid rgba(124,110,240,.2)"}}>
+                📋 {todayCount}
               </div>
             )}
-            <div className="ib" style={{position:"relative"}} onClick={()=>addNotif({type:"info",icon:"🔔",title:"لا إشعارات جديدة"})}>🔔</div>
+            <div className="ib" onClick={()=>addNotif({type:"info",icon:"🔔",title:"لا إشعارات جديدة"})}>🔔</div>
           </div>
         </div>
         {page==="week"     &&<ThisWeekPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} addNotif={addNotif} weekOffset={weekOffset}/>}
