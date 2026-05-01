@@ -193,8 +193,10 @@ function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset}) 
     const pct = dt.length ? Math.round(done / dt.length * 100) : 0;
     return { d, s, dt, done, total: dt.length, pct, isTod: s === today, isSel: s === selDay };
   });
-  // Reverse so Saturday appears on the RIGHT in RTL layout
-  const displayDays = [...days].reverse();
+  // In RTL layout, grid starts from RIGHT automatically
+  // days[0]=Sat should appear on RIGHT, days[6]=Fri on LEFT
+  // So we DON'T reverse - RTL CSS handles it
+  const displayDays = days;
 
   // Tasks for selected day
   const selTasks = tasks.filter(t => t.date === selDay)
