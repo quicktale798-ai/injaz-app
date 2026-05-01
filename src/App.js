@@ -190,7 +190,8 @@ function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset, o
     const s = d.toISOString().split("T")[0];
     const dt = tasks.filter(t => t.date === s);
     const done = dt.filter(t => t.done).length;
-    const pct = dt.length ? Math.round(done / dt.length * 100) : 0;
+    const total = dt.length;
+    const pct = total ? Math.round(done / total * 100) : 0;
     return { d, s, dt, done, total: dt.length, pct, isTod: s === today, isSel: s === selDay };
   });
   // In RTL layout, grid starts from RIGHT automatically
@@ -198,9 +199,17 @@ function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset, o
   // So we DON'T reverse - RTL CSS handles it
   const displayDays = days; // RTL naturally puts Sat on right, Fri on left
 
-  // Tasks for selected day
-  const selTasks = tasks.filter(t => t.date === selDay)
-    .sort((a, b) => a.done === b.done ? 0 : a.done ? 1 : -1);
+  // Tasks for selected day — hide completed tasks (they disappear on done)
+  const selTasks = tasks
+    .filter(t => t.date === selDay && !t.done)
+    .sort((a, b) => {
+      const p = {"high":0,"medium":1,"low":2};
+      return (p[a.priority]??1) - (p[b.priority]??1);
+    });
+
+  // Count including done for header display
+  const selAllTasks = tasks.filter(t => t.date === selDay);
+  const selDoneCount = selAllTasks.filter(t => t.done).length;
 
   // Split: daily/one-time vs repeating tasks
   const dailyTasks     = selTasks.filter(t => !t.repeat || t.repeat === "none");
@@ -213,7 +222,7 @@ function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset, o
 
   const selDateObj = new Date(selDay + "T00:00:00");
   const selDayName = WD[selDateObj.getDay()];
-  const selDone    = selTasks.filter(t => t.done).length;
+  // selDone calculated above as selDoneCount
 
   async function toggle(id) {
     const task = tasks.find(t => t.id === id); if (!task) return;
@@ -252,9 +261,9 @@ function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset, o
       return;
     }
 
-    // Non-repeating task — just toggle done
+    // Non-repeating task — mark done in DB and hide from today's view
     setTasks(prev => prev.map(t => t.id === id ? {...t, done, completedAt: ca} : t));
-    if (done) addNotif({type:"success", icon:"🎉", title:"أحسنت!", msg: task.title});
+    if (done) addNotif({type:"success", icon:"🎉", title:"أحسنت! ✅", msg: task.title});
   }
 
   function TaskCard({t}) {
@@ -304,8 +313,8 @@ function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset, o
         {[
           {i:"📅", v:`${wDone}/${wTasks.length}`, l:"إنجاز الأسبوع",     c:"var(--a)"},
           {i:"📈", v:wPct+"%",                    l:"نسبة الأسبوع",      c:wPct>=70?"var(--g)":"var(--am)"},
-          {i:"✅", v:selDone,                      l:`أنجزت — ${selDayName}`, c:"var(--g)"},
-          {i:"⏳", v:selTasks.filter(t=>!t.done).length, l:`متبقية — ${selDayName}`, c:"var(--am)"},
+          {i:"✅", v:selDoneCount,                  l:`أنجزت — ${selDayName}`, c:"var(--g)"},
+          {i:"⏳", v:selTasks.length,                    l:`متبقية — ${selDayName}`, c:"var(--am)"},
         ].map((s,i) => (
           <div key={i} style={{background:"var(--bg2)",border:"1px solid var(--brd)",borderRadius:13,padding:"12px 14px",display:"flex",alignItems:"center",gap:11}}>
             <div style={{width:38,height:38,borderRadius:10,background:`rgba(${["124,110,240","245,158,11","16,185,129","245,158,11"][i]},.14)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>{s.i}</div>
@@ -368,7 +377,7 @@ function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset, o
                 <span style={{fontSize:16}}>📋</span>
                 <span style={{fontSize:14,fontWeight:700}}>{selDayName}، {selDateObj.getDate()} {selDateObj.toLocaleDateString("ar-EG",{month:"long"})}</span>
                 <span style={{fontSize:10,padding:"2px 8px",borderRadius:20,background:dailyTasks.filter(t=>t.done).length===dailyTasks.length&&dailyTasks.length>0?"rgba(16,185,129,.15)":"var(--bg3)",color:dailyTasks.filter(t=>t.done).length===dailyTasks.length&&dailyTasks.length>0?"var(--g)":"var(--t3)",fontWeight:700}}>
-                  {dailyTasks.filter(t=>t.done).length}/{dailyTasks.length}
+                  {selDoneCount}/{selAllTasks.length}
                 </span>
                 {selDay===today&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:20,background:"rgba(124,110,240,.15)",color:"var(--a2)",fontWeight:700}}>اليوم 📍</span>}
               </div>
@@ -940,10 +949,10 @@ export default function App(){
       return;
     }
 
-    // Non-repeating — just toggle
+    // Non-repeating — mark done (stays in list but hidden by filter in week view)
     setTasks(prev => prev.map(t => t.id === id ? { ...t, done, completedAt: ca } : t));
     if (done) {
-      addNotif({ type: "success", icon: "🎉", title: "أحسنت!", msg: task.title });
+      addNotif({ type: "success", icon: "🎉", title: "أحسنت! ✅", msg: task.title });
       // Update goal progress
       const gid = task.goalId || task.goal_id;
       if (gid) {
