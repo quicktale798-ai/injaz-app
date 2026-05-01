@@ -1007,45 +1007,50 @@ export default function App(){
     const today = toDay();
     const ca = done ? `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}` : null;
 
-    // 1. Mark done in DB
+    // Mark done in DB
     await supabase.from("tasks").update({ done, completed_at: ca }).eq("id", id);
 
-    // 2. Show strikethrough immediately
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, done, completedAt: ca } : t));
-
-    if (done) {
+    if (done && task.repeat && task.repeat !== "none") {
+      // Step 1: show strikethrough
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, done, completedAt: ca } : t));
       addNotif({ type: "success", icon: "🎉", title: "أحسنت! ✅", msg: task.title });
 
-      if (task.repeat && task.repeat !== "none") {
-        // Repeating: schedule next day, then remove after 1.5s
-        const uid = (await supabase.auth.getUser()).data.user?.id;
-        const nd  = getNextRepeat(today, task.repeat);
-        const { data: ex } = await supabase.from("tasks").select("id")
-          .eq("user_id", uid).eq("title", task.title).eq("date", nd).eq("done", false).limit(1);
-        if (!ex || !ex.length) {
-          const { data: nx } = await supabase.from("tasks").insert({
-            user_id: uid, title: task.title, priority: task.priority, date: nd,
-            done: false, completed_at: null, repeat: task.repeat,
-            goal_id: task.goalId || task.goal_id || null,
-            time: task.time || null, week_days: task.weekDays || null, note: task.note || null
-          }).select().single();
-          if (nx) {
-            setTimeout(() => {
-              setTasks(prev => prev
-                .filter(t => t.id !== id)
-                .concat([{ ...nx, completedAt: null, goalId: nx.goal_id, weekDays: nx.week_days }])
-              );
-            }, 1500);
-            addNotif({ type: "info", icon: "🔁", title: "ستظهر غداً 📅", msg: nd });
-            return;
-          }
+      // Step 2: create next occurrence
+      const uid = (await supabase.auth.getUser()).data.user?.id;
+      const nd  = getNextRepeat(today, task.repeat);
+      const { data: ex } = await supabase.from("tasks").select("id")
+        .eq("user_id", uid).eq("title", task.title).eq("date", nd).eq("done", false).limit(1);
+
+      let nextTask = null;
+      if (!ex || !ex.length) {
+        const { data: nx } = await supabase.from("tasks").insert({
+          user_id: uid, title: task.title, priority: task.priority, date: nd,
+          done: false, completed_at: null, repeat: task.repeat,
+          goal_id: task.goalId || task.goal_id || null,
+          time: task.time || null, week_days: task.weekDays || null, note: task.note || null
+        }).select().single();
+        if (nx) {
+          nextTask = { ...nx, completedAt: null, goalId: nx.goal_id, weekDays: nx.week_days };
+          addNotif({ type: "info", icon: "🔁", title: "ستظهر غداً 📅", msg: nd });
         }
-        // Already scheduled — remove after delay
-        setTimeout(() => setTasks(prev => prev.filter(t => t.id !== id)), 1500);
-        return;
       }
 
-      // Non-repeating: update goal progress
+      // Step 3: remove done task + add next (after 1.2s for strikethrough effect)
+      const taskId = id;
+      const next = nextTask;
+      setTimeout(() => {
+        setTasks(prev => {
+          const filtered = prev.filter(t => t.id !== taskId);
+          return next ? [...filtered, next] : filtered;
+        });
+      }, 1200);
+      return;
+    }
+
+    // Non-repeating: just show done
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, done, completedAt: ca } : t));
+    if (done) {
+      addNotif({ type: "success", icon: "🎉", title: "أحسنت! ✅", msg: task.title });
       const gid = task.goalId || task.goal_id;
       if (gid) {
         const g = goals.find(x => x.id === gid);
