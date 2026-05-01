@@ -199,12 +199,14 @@ function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset, o
   // So we DON'T reverse - RTL CSS handles it
   const displayDays = days; // RTL naturally puts Sat on right, Fri on left
 
-  // Tasks for selected day — only show pending (done tasks disappear immediately)
+  // Tasks for selected day — show all, done tasks shown with strikethrough then removed
   const selAllTasks  = tasks.filter(t => t.date === selDay);
   const selDoneCount = selAllTasks.filter(t => t.done).length;
   const selTasks = selAllTasks
-    .filter(t => !t.done)
-    .sort((a, b) => ({"high":0,"medium":1,"low":2}[a.priority]??1) - ({"high":0,"medium":1,"low":2}[b.priority]??1));
+    .sort((a, b) => {
+      if (a.done !== b.done) return a.done ? 1 : -1; // pending first
+      return ({"high":0,"medium":1,"low":2}[a.priority]??1) - ({"high":0,"medium":1,"low":2}[b.priority]??1);
+    });
 
   // Split: daily/one-time vs repeating tasks
   const dailyTasks     = selTasks.filter(t => !t.repeat || t.repeat === "none");
@@ -997,49 +999,53 @@ export default function App(){
 
   function addNotif(n){const id=Date.now();setNotifs(p=>[...p,{...n,id}]);setTimeout(()=>setNotifs(p=>p.filter(x=>x.id!==id)),3500);}
 
-  // Global toggle — used by both ThisWeekPage and TasksPage
+  // Global toggle
   async function globalToggle(id) {
     const task = tasks.find(t => t.id === id); if (!task) return;
     const done = !task.done;
     const now  = new Date();
     const today = toDay();
     const ca = done ? `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}` : null;
+
+    // 1. Mark done in DB
     await supabase.from("tasks").update({ done, completed_at: ca }).eq("id", id);
 
-    if (done && task.repeat && task.repeat !== "none") {
-      // Repeating: remove from list + schedule next day
-      const uid = (await supabase.auth.getUser()).data.user?.id;
-      const nd  = getNextRepeat(today, task.repeat);
-      const { data: ex } = await supabase.from("tasks").select("id")
-        .eq("user_id", uid).eq("title", task.title).eq("date", nd).eq("done", false).limit(1);
-      if (!ex || !ex.length) {
-        const { data: nx } = await supabase.from("tasks").insert({
-          user_id: uid, title: task.title, priority: task.priority, date: nd,
-          done: false, completed_at: null, repeat: task.repeat,
-          goal_id: task.goalId || task.goal_id || null,
-          time: task.time || null, week_days: task.weekDays || null, note: task.note || null
-        }).select().single();
-        if (nx) {
-          setTasks(prev => prev
-            .filter(t => t.id !== id)
-            .concat([{ ...nx, completedAt: null, goalId: nx.goal_id, weekDays: nx.week_days }])
-          );
-          addNotif({ type: "success", icon: "🎉", title: "أحسنت!", msg: task.title });
-          addNotif({ type: "info",    icon: "🔁", title: "ستظهر غداً 📅", msg: nd });
-          return;
-        }
-      }
-      // Already scheduled — just remove
-      setTasks(prev => prev.filter(t => t.id !== id));
-      addNotif({ type: "success", icon: "🎉", title: "أحسنت!", msg: task.title });
-      return;
-    }
-
-    // Non-repeating — mark done (stays in list but hidden by filter in week view)
+    // 2. Show strikethrough immediately
     setTasks(prev => prev.map(t => t.id === id ? { ...t, done, completedAt: ca } : t));
+
     if (done) {
       addNotif({ type: "success", icon: "🎉", title: "أحسنت! ✅", msg: task.title });
-      // Update goal progress
+
+      if (task.repeat && task.repeat !== "none") {
+        // Repeating: schedule next day, then remove after 1.5s
+        const uid = (await supabase.auth.getUser()).data.user?.id;
+        const nd  = getNextRepeat(today, task.repeat);
+        const { data: ex } = await supabase.from("tasks").select("id")
+          .eq("user_id", uid).eq("title", task.title).eq("date", nd).eq("done", false).limit(1);
+        if (!ex || !ex.length) {
+          const { data: nx } = await supabase.from("tasks").insert({
+            user_id: uid, title: task.title, priority: task.priority, date: nd,
+            done: false, completed_at: null, repeat: task.repeat,
+            goal_id: task.goalId || task.goal_id || null,
+            time: task.time || null, week_days: task.weekDays || null, note: task.note || null
+          }).select().single();
+          if (nx) {
+            setTimeout(() => {
+              setTasks(prev => prev
+                .filter(t => t.id !== id)
+                .concat([{ ...nx, completedAt: null, goalId: nx.goal_id, weekDays: nx.week_days }])
+              );
+            }, 1500);
+            addNotif({ type: "info", icon: "🔁", title: "ستظهر غداً 📅", msg: nd });
+            return;
+          }
+        }
+        // Already scheduled — remove after delay
+        setTimeout(() => setTasks(prev => prev.filter(t => t.id !== id)), 1500);
+        return;
+      }
+
+      // Non-repeating: update goal progress
       const gid = task.goalId || task.goal_id;
       if (gid) {
         const g = goals.find(x => x.id === gid);
