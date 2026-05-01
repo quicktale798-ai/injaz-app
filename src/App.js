@@ -162,7 +162,7 @@ function PrayerTracker(){
   );
 }
 // ── THIS WEEK PAGE ───────────────────────────────────────────
-function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset}) {
+function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset, onToggle}) {
   const base = new Date(); base.setDate(base.getDate() + weekOffset * 7);
   const ws = getWeekStart(base);
   const we = getWeekEnd(ws);
@@ -269,7 +269,7 @@ function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset}) 
         borderRight: `4px solid ${t.done ? "var(--g)" : pc}`,
         opacity: t.done ? 0.6 : 1, transition:"all .2s",
       }}>
-        <div onClick={() => toggle(t.id)} style={{
+        <div onClick={() => onToggle(t.id)} style={{
           width:21, height:21, borderRadius:6, flexShrink:0, marginTop:2, cursor:"pointer",
           border:`2px solid ${t.done ? "var(--g)" : pc}`,
           background: t.done ? "var(--g)" : "transparent",
@@ -598,7 +598,7 @@ function TaskForm({form, setForm, goals}){
 }
 
 // ── TASKS PAGE ───────────────────────────────────────────────
-function TasksPage({tasks,setTasks,goals,setGoals,addNotif}){
+function TasksPage({tasks,setTasks,goals,setGoals,addNotif,onToggle}){
   const [filter,setFilter]=useState("today");
   const [showAdd,setShowAdd]=useState(false);
   const [editT,setEditT]=useState(null);
@@ -672,7 +672,7 @@ function TasksPage({tasks,setTasks,goals,setGoals,addNotif}){
       const ov=!t.done&&t.date<today;
       return(<div key={t.id} className={`tc ${t.done?"dn":""} ${ov?"ov":""}`} style={{borderRight:`3px solid ${pc}`}}>
         <div style={{display:"flex",alignItems:"flex-start",gap:9}}>
-          <div className="cb" onClick={()=>toggle(t.id)} style={{borderColor:t.done?"var(--g)":pc,background:t.done?"var(--g)":"transparent"}}>{t.done?"✓":""}</div>
+          <div className="cb" onClick={()=>onToggle(t.id)} style={{borderColor:t.done?"var(--g)":pc,background:t.done?"var(--g)":"transparent"}}>{t.done?"✓":""}</div>
           <div style={{flex:1,minWidth:0}}>
             <div style={{display:"flex",justifyContent:"space-between",gap:6,marginBottom:4}}>
               <div style={{fontSize:13,fontWeight:600,textDecoration:t.done?"line-through":"none",color:t.done?"var(--t3)":"var(--t)"}}>{t.title}</div>
@@ -901,6 +901,64 @@ export default function App(){
   },[user,tasks]);
 
   function addNotif(n){const id=Date.now();setNotifs(p=>[...p,{...n,id}]);setTimeout(()=>setNotifs(p=>p.filter(x=>x.id!==id)),3500);}
+
+  // Global toggle — used by both ThisWeekPage and TasksPage
+  async function globalToggle(id) {
+    const task = tasks.find(t => t.id === id); if (!task) return;
+    const done = !task.done;
+    const now  = new Date();
+    const today = toDay();
+    const ca = done ? `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}` : null;
+    await supabase.from("tasks").update({ done, completed_at: ca }).eq("id", id);
+
+    if (done && task.repeat && task.repeat !== "none") {
+      // Repeating: remove from list + schedule next day
+      const uid = (await supabase.auth.getUser()).data.user?.id;
+      const nd  = getNextRepeat(today, task.repeat);
+      const { data: ex } = await supabase.from("tasks").select("id")
+        .eq("user_id", uid).eq("title", task.title).eq("date", nd).eq("done", false).limit(1);
+      if (!ex || !ex.length) {
+        const { data: nx } = await supabase.from("tasks").insert({
+          user_id: uid, title: task.title, priority: task.priority, date: nd,
+          done: false, completed_at: null, repeat: task.repeat,
+          goal_id: task.goalId || task.goal_id || null,
+          time: task.time || null, week_days: task.weekDays || null, note: task.note || null
+        }).select().single();
+        if (nx) {
+          setTasks(prev => prev
+            .filter(t => t.id !== id)
+            .concat([{ ...nx, completedAt: null, goalId: nx.goal_id, weekDays: nx.week_days }])
+          );
+          addNotif({ type: "success", icon: "🎉", title: "أحسنت!", msg: task.title });
+          addNotif({ type: "info",    icon: "🔁", title: "ستظهر غداً 📅", msg: nd });
+          return;
+        }
+      }
+      // Already scheduled — just remove
+      setTasks(prev => prev.filter(t => t.id !== id));
+      addNotif({ type: "success", icon: "🎉", title: "أحسنت!", msg: task.title });
+      return;
+    }
+
+    // Non-repeating — just toggle
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, done, completedAt: ca } : t));
+    if (done) {
+      addNotif({ type: "success", icon: "🎉", title: "أحسنت!", msg: task.title });
+      // Update goal progress
+      const gid = task.goalId || task.goal_id;
+      if (gid) {
+        const g = goals.find(x => x.id === gid);
+        if (g) {
+          const updTasks = tasks.map(t => t.id === id ? { ...t, done } : t);
+          const gt = updTasks.filter(t => (t.goalId || t.goal_id) === gid);
+          const p  = gt.length ? Math.round(gt.filter(t => t.done).length / gt.length * 100) : 0;
+          const np = Math.min(100, Math.max(g.progress, p));
+          await supabase.from("goals").update({ progress: np }).eq("id", gid);
+          setGoals(prev => prev.map(x => x.id === gid ? { ...x, progress: np } : x));
+        }
+      }
+    }
+  }
   function onPomoSession(mins){setPomoSess(p=>p+1);setTodayFocus(p=>p+mins/60);}
   async function logout(){await supabase.auth.signOut();setUser(null);}
 
@@ -992,9 +1050,9 @@ export default function App(){
             <div className="ib" onClick={()=>addNotif({type:"info",icon:"🔔",title:"لا إشعارات جديدة"})}>🔔</div>
           </div>
         </div>
-        {page==="week"     &&<ThisWeekPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} addNotif={addNotif} weekOffset={weekOffset}/>}
+        {page==="week"     &&<ThisWeekPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} addNotif={addNotif} weekOffset={weekOffset} onToggle={globalToggle}/>}
         {page==="goals"    &&<GoalsPage goals={goals} setGoals={setGoals} tasks={tasks} addNotif={addNotif} weekOffset={weekOffset}/>}
-        {page==="tasks"    &&<TasksPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} addNotif={addNotif}/>}
+        {page==="tasks"    &&<TasksPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} addNotif={addNotif} onToggle={globalToggle}/>}
         {page==="pomodoro" &&<PomodoroPage onSession={onPomoSession} addNotif={addNotif} goals={goals}/>}
         {page==="stats"    &&<StatsPage tasks={tasks} goals={goals}/>}
         {page==="ai"       &&<AIPage tasks={tasks} goals={goals}/>}
