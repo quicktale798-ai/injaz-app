@@ -468,98 +468,204 @@ function GoalForm({form, setForm}) {
 }
 
 // ── GOALS PAGE ───────────────────────────────────────────────
-function GoalsPage({goals,setGoals,tasks,addNotif,weekOffset}){
-  const [showAdd,setShowAdd]=useState(false);
-  const [editG,setEditG]=useState(null);
-  const [delG,setDelG]=useState(null);
-  const [exp,setExp]=useState(null);
-  const [aF,setAF]=useState({title:"",category:"",color:"#6366f1",status:"active",startDate:"",endDate:""});
-  const [eF,setEF]=useState({});
-  const [ns,setNs]=useState("");
-  const base=new Date();base.setDate(base.getDate()+weekOffset*7);
-  const ws=getWeekStart(base);const we=getWeekEnd(ws);
+function GoalsPage({goals, setGoals, tasks, addNotif, weekOffset}) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [editG,   setEditG]   = useState(null);
+  const [delG,    setDelG]    = useState(null);
+  const [exp,     setExp]     = useState(null);
+  const [editNote, setEditNote] = useState({});
+  const [aF, setAF] = useState({title:"", category:"", color:"#6366f1", status:"active", startDate:"", endDate:""});
+  const [eF, setEF] = useState({});
 
-  async function addGoal(){if(!aF.title.trim())return;const uid=(await supabase.auth.getUser()).data.user?.id;const{data}=await supabase.from("goals").insert({user_id:uid,title:aF.title,category:aF.category||"",progress:0,status:aF.status||"active",color:aF.color||"#6366f1",start_date:aF.startDate||"",end_date:aF.endDate||"",subtasks:[]}).select().single();if(data){setGoals(p=>[...p,{...data,subtasks:[]}]);addNotif({type:"success",icon:"🎯",title:"تم إنشاء الهدف",msg:data.title});}setShowAdd(false);setAF({title:"",category:"",color:"#6366f1",status:"active",startDate:"",endDate:""});}
-  async function saveEdit(){if(!eF.title?.trim())return;await supabase.from("goals").update({title:eF.title,category:eF.category,status:eF.status,color:eF.color,start_date:eF.startDate,end_date:eF.endDate}).eq("id",editG.id);setGoals(p=>p.map(g=>g.id===editG.id?{...g,...eF,start_date:eF.startDate,end_date:eF.endDate}:g));addNotif({type:"info",icon:"✏️",title:"تم التعديل"});setEditG(null);}
-  async function doDelete(){await supabase.from("goals").delete().eq("id",delG.id);setGoals(p=>p.filter(g=>g.id!==delG.id));addNotif({type:"warning",icon:"🗑️",title:"تم الحذف"});setDelG(null);}
-  async function toggleSub(gid,sid){const g=goals.find(x=>x.id===gid);if(!g)return;const upd=g.subtasks.map(s=>s.id===sid?{...s,done:!s.done}:s);const prog=upd.length?Math.round(upd.filter(s=>s.done).length/upd.length*100):g.progress;await supabase.from("goals").update({subtasks:upd,progress:prog}).eq("id",gid);setGoals(p=>p.map(x=>x.id===gid?{...x,subtasks:upd,progress:prog}:x));}
-  async function addSub(gid){if(!ns.trim())return;const g=goals.find(x=>x.id===gid);if(!g)return;const upd=[...(g.subtasks||[]),{id:Date.now(),title:ns,done:false}];await supabase.from("goals").update({subtasks:upd}).eq("id",gid);setGoals(p=>p.map(x=>x.id===gid?{...x,subtasks:upd}:x));setNs("");}
-  async function delSub(gid,sid){const g=goals.find(x=>x.id===gid);if(!g)return;const upd=g.subtasks.filter(s=>s.id!==sid);const prog=upd.length?Math.round(upd.filter(s=>s.done).length/upd.length*100):g.progress;await supabase.from("goals").update({subtasks:upd,progress:prog}).eq("id",gid);setGoals(p=>p.map(x=>x.id===gid?{...x,subtasks:upd,progress:prog}:x));}
+  const base = new Date(); base.setDate(base.getDate() + weekOffset * 7);
+  const ws = getWeekStart(base); const we = getWeekEnd(ws);
 
-  return(<div className="page">
-    <div className="sh"><div className="st">🎯 الأهداف</div><button id="quick-add-goal" className="btn bp bsm" onClick={()=>setShowAdd(true)}>+ هدف جديد</button></div>
-    <div className="g4" style={{marginBottom:16}}>
-      {[
-        {i:"🔥",s:"active",l:"نشطة",   c:"var(--a)"},
-        {i:"✅",s:"done",  l:"مكتملة", c:"var(--g)"},
-        {i:"⏸️",s:"paused",l:"متوقفة", c:"var(--am)"},
-      ].map(({i,s,l,c})=>(
-        <div key={s} style={{background:"var(--bg2)",border:"1px solid var(--brd)",borderRadius:13,padding:"13px 15px",display:"flex",alignItems:"center",gap:11}}>
-          <div style={{width:40,height:40,borderRadius:10,background:`rgba(${s==="active"?"124,110,240":s==="done"?"16,185,129":"245,158,11"},.15)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>{i}</div>
-          <div><div style={{fontSize:22,fontWeight:900,fontFamily:"Tajawal",color:c,lineHeight:1}}>{goals.filter(g=>g.status===s).length}</div><div style={{fontSize:10,color:"var(--t2)",marginTop:3}}>أهداف {l}</div></div>
-        </div>
-      ))}
-      <div style={{background:"var(--bg2)",border:"1px solid var(--brd)",borderRadius:13,padding:"13px 15px",display:"flex",alignItems:"center",gap:11}}>
-        <div style={{width:40,height:40,borderRadius:10,background:"rgba(59,130,246,.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>📊</div>
-        <div><div style={{fontSize:22,fontWeight:900,fontFamily:"Tajawal",color:"var(--b)",lineHeight:1}}>{goals.length?Math.round(goals.reduce((a,g)=>a+g.progress,0)/goals.length):0}%</div><div style={{fontSize:10,color:"var(--t2)",marginTop:3}}>متوسط التقدم</div></div>
+  async function addGoal() {
+    if (!aF.title.trim()) return;
+    const uid = (await supabase.auth.getUser()).data.user?.id;
+    const { data } = await supabase.from("goals").insert({
+      user_id: uid, title: aF.title, category: aF.category || "",
+      progress: 0, status: aF.status || "active", color: aF.color || "#6366f1",
+      start_date: aF.startDate || "", end_date: aF.endDate || "",
+      subtasks: [], note: ""
+    }).select().single();
+    if (data) { setGoals(p => [...p, { ...data, subtasks: [], note: "" }]); addNotif({ type:"success", icon:"🎯", title:"تم إنشاء الهدف", msg: data.title }); }
+    setShowAdd(false);
+    setAF({ title:"", category:"", color:"#6366f1", status:"active", startDate:"", endDate:"" });
+  }
+
+  async function saveEdit() {
+    if (!eF.title?.trim()) return;
+    await supabase.from("goals").update({
+      title: eF.title, category: eF.category, status: eF.status,
+      color: eF.color, start_date: eF.startDate, end_date: eF.endDate
+    }).eq("id", editG.id);
+    setGoals(p => p.map(g => g.id === editG.id ? { ...g, ...eF, start_date: eF.startDate, end_date: eF.endDate } : g));
+    addNotif({ type:"info", icon:"✏️", title:"تم التعديل" }); setEditG(null);
+  }
+
+  async function doDelete() {
+    await supabase.from("goals").delete().eq("id", delG.id);
+    setGoals(p => p.filter(g => g.id !== delG.id));
+    addNotif({ type:"warning", icon:"🗑️", title:"تم الحذف" }); setDelG(null);
+  }
+
+  async function saveNote(gid, note) {
+    await supabase.from("goals").update({ note }).eq("id", gid);
+    setGoals(p => p.map(g => g.id === gid ? { ...g, note } : g));
+    setEditNote(p => ({ ...p, [gid]: false }));
+    addNotif({ type:"info", icon:"📝", title:"تم حفظ الملاحظة" });
+  }
+
+  return (
+    <div className="page">
+      <div className="sh">
+        <div className="st">🎯 الأهداف</div>
+        <button id="quick-add-goal" className="btn bp bsm" onClick={() => setShowAdd(true)}>+ هدف جديد</button>
       </div>
-    </div>
-    {goals.length===0&&<div className="empty card"><div style={{fontSize:34,marginBottom:8}}>🎯</div><div style={{fontSize:13}}>لا أهداف بعد</div></div>}
-    {goals.map(g=>{
-      const wt=tasks.filter(t=>{const d=new Date(t.date+"T00:00:00");return String(t.goalId||t.goal_id)===String(g.id)&&d>=ws&&d<=we;});
-      const wd=wt.filter(t=>t.done);const wp=wt.length?Math.round(wd.length/wt.length*100):0;
-      const isExp=exp===g.id;
-      return(<div key={g.id} className="gc" style={{borderRight:`4px solid ${g.color}`}}>
-        <div style={{padding:"13px 15px",cursor:"pointer"}} onClick={()=>setExp(isExp?null:g.id)}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-            <div style={{flex:1}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                <span style={{fontSize:14,fontWeight:700}}>{g.title}</span>
-                <span style={{fontSize:9,padding:"2px 7px",borderRadius:18,fontWeight:700,background:g.status==="active"?"rgba(16,185,129,.12)":g.status==="done"?"rgba(59,130,246,.12)":"rgba(245,158,11,.12)",color:g.status==="active"?"var(--g)":g.status==="done"?"var(--b)":"var(--am)"}}>{g.status==="active"?"نشط":g.status==="done"?"مكتمل":"متوقف"}</span>
-                {g.category&&<span style={{fontSize:9,color:"var(--t3)"}}>{g.category}</span>}
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:5}}><span style={{fontSize:10,color:"var(--t2)",flexShrink:0}}>الإجمالي</span><div style={{flex:1,maxWidth:150}}><PBar pct={g.progress} color={g.color} h={5}/></div><span style={{fontSize:12,color:g.color,fontWeight:800,fontFamily:"Tajawal"}}>{g.progress}%</span></div>
-              <div style={{display:"flex",alignItems:"center",gap:9}}><span style={{fontSize:10,color:"var(--t2)",flexShrink:0}}>هذا الأسبوع</span><div style={{flex:1,maxWidth:150}}><PBar pct={wp} color={`${g.color}90`} h={4}/></div><span style={{fontSize:10,color:"var(--t3)"}}>{wd.length}/{wt.length} ({wp}%)</span></div>
+
+      {/* Stats */}
+      <div className="g4" style={{ marginBottom: 16 }}>
+        {[
+          { i:"🔥", s:"active", l:"نشطة",   c:"var(--a)"  },
+          { i:"✅", s:"done",   l:"مكتملة", c:"var(--g)"  },
+          { i:"⏸️", s:"paused", l:"متوقفة", c:"var(--am)" },
+        ].map(({ i, s, l, c }) => (
+          <div key={s} style={{ background:"var(--bg2)", border:"1px solid var(--brd)", borderRadius:13, padding:"13px 15px", display:"flex", alignItems:"center", gap:11 }}>
+            <div style={{ width:40, height:40, borderRadius:10, background:`rgba(${s==="active"?"124,110,240":s==="done"?"16,185,129":"245,158,11"},.14)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>{i}</div>
+            <div>
+              <div style={{ fontSize:22, fontWeight:900, fontFamily:"Tajawal", color:c, lineHeight:1 }}>{goals.filter(g => g.status === s).length}</div>
+              <div style={{ fontSize:10, color:"var(--t2)", marginTop:3 }}>أهداف {l}</div>
             </div>
-            <div style={{display:"flex",gap:5,alignItems:"center",flexShrink:0,marginRight:8}}>
-              <button className="ib" style={{width:27,height:27,fontSize:12}} onClick={e=>{e.stopPropagation();setEF({title:g.title,category:g.category||"",color:g.color,status:g.status,startDate:g.start_date||"",endDate:g.end_date||""});setEditG(g);}}>✏️</button>
-              <button className="ib" style={{width:27,height:27,fontSize:12,color:"var(--r)"}} onClick={e=>{e.stopPropagation();setDelG(g);}}>🗑️</button>
-              <span style={{fontSize:11,color:"var(--t3)",width:14,textAlign:"center"}}>{isExp?"▲":"▼"}</span>
-            </div>
+          </div>
+        ))}
+        <div style={{ background:"var(--bg2)", border:"1px solid var(--brd)", borderRadius:13, padding:"13px 15px", display:"flex", alignItems:"center", gap:11 }}>
+          <div style={{ width:40, height:40, borderRadius:10, background:"rgba(59,130,246,.14)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>📊</div>
+          <div>
+            <div style={{ fontSize:22, fontWeight:900, fontFamily:"Tajawal", color:"var(--b)", lineHeight:1 }}>{goals.length ? Math.round(goals.reduce((a,g) => a+g.progress, 0) / goals.length) : 0}%</div>
+            <div style={{ fontSize:10, color:"var(--t2)", marginTop:3 }}>متوسط التقدم</div>
           </div>
         </div>
-        {isExp&&(<div style={{padding:"0 15px 13px",borderTop:"1px solid var(--brd)"}}>
-          <div style={{fontSize:11,color:"var(--t2)",margin:"10px 0 7px",fontWeight:600}}>المهام الفرعية</div>
-          {(!g.subtasks||!g.subtasks.length)&&<div style={{fontSize:11,color:"var(--t3)",marginBottom:7}}>لا مهام فرعية.</div>}
-          {(g.subtasks||[]).map(s=><div key={s.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid var(--brd)"}}>
-            <div className="cb" onClick={()=>toggleSub(g.id,s.id)} style={{borderColor:s.done?"var(--g)":g.color,background:s.done?"var(--g)":"transparent",width:16,height:16}}>{s.done?"✓":""}</div>
-            <span style={{flex:1,fontSize:12,textDecoration:s.done?"line-through":"none",color:s.done?"var(--t3)":"var(--t)"}}>{s.title}</span>
-            <button onClick={()=>delSub(g.id,s.id)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--t3)",fontSize:12}}>✕</button>
-          </div>)}
-          <div style={{display:"flex",gap:6,marginTop:9}}>
-            <input className="fi" style={{flex:1,padding:"6px 9px",fontSize:12}} placeholder="مهمة فرعية..." value={ns} onChange={e=>setNs(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addSub(g.id)}/>
-            <button className="btn bp bsm" onClick={()=>addSub(g.id)}>+</button>
+      </div>
+
+      {goals.length === 0 && (
+        <div style={{ textAlign:"center", padding:"50px 0", color:"var(--t3)" }}>
+          <div style={{ fontSize:44, marginBottom:10 }}>🎯</div>
+          <div style={{ fontSize:14, fontWeight:600, color:"var(--t2)", marginBottom:4 }}>لا أهداف بعد</div>
+          <div style={{ fontSize:12 }}>أضف هدفك الأول للبدء</div>
+        </div>
+      )}
+
+      {goals.map(g => {
+        const wt = tasks.filter(t => { const d = new Date(t.date+"T00:00:00"); return String(t.goalId||t.goal_id)===String(g.id)&&d>=ws&&d<=we; });
+        const wd = wt.filter(t => t.done); const wp = wt.length ? Math.round(wd.length/wt.length*100) : 0;
+        const isExp = exp === g.id;
+        return (
+          <div key={g.id} style={{ background:"var(--bg2)", border:`1px solid ${isExp?g.color+"40":"var(--brd)"}`, borderRadius:14, overflow:"hidden", marginBottom:12, borderRight:`4px solid ${g.color}` }}>
+            {/* Header */}
+            <div style={{ padding:"14px 16px", cursor:"pointer" }} onClick={() => setExp(isExp ? null : g.id)}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:5 }}>
+                    <span style={{ fontSize:14, fontWeight:700 }}>{g.title}</span>
+                    <span style={{ fontSize:9, padding:"2px 7px", borderRadius:18, fontWeight:700,
+                      background: g.status==="active"?"rgba(16,185,129,.12)":g.status==="done"?"rgba(59,130,246,.12)":"rgba(245,158,11,.12)",
+                      color: g.status==="active"?"var(--g)":g.status==="done"?"var(--b)":"var(--am)" }}>
+                      {g.status==="active"?"🟢 نشط":g.status==="done"?"✅ مكتمل":"⏸️ متوقف"}
+                    </span>
+                    {g.category && <span style={{ fontSize:9, color:"var(--t3)" }}>📂 {g.category}</span>}
+                  </div>
+                  {/* Progress bars */}
+                  <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:5 }}>
+                    <span style={{ fontSize:10, color:"var(--t2)", flexShrink:0, width:50 }}>الإجمالي</span>
+                    <div style={{ flex:1, maxWidth:200 }}><PBar pct={g.progress} color={g.color} h={5}/></div>
+                    <span style={{ fontSize:12, color:g.color, fontWeight:800, fontFamily:"Tajawal" }}>{g.progress}%</span>
+                  </div>
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <span style={{ fontSize:10, color:"var(--t2)", flexShrink:0, width:50 }}>الأسبوع</span>
+                    <div style={{ flex:1, maxWidth:200 }}><PBar pct={wp} color={`${g.color}90`} h={4}/></div>
+                    <span style={{ fontSize:10, color:"var(--t3)" }}>{wd.length}/{wt.length} ({wp}%)</span>
+                  </div>
+                </div>
+                <div style={{ display:"flex", gap:5, flexShrink:0, marginRight:8, alignItems:"center" }}>
+                  <button className="ib" style={{ width:27, height:27, fontSize:12 }} onClick={e => { e.stopPropagation(); setEF({ title:g.title, category:g.category||"", color:g.color, status:g.status, startDate:g.start_date||"", endDate:g.end_date||"" }); setEditG(g); }}>✏️</button>
+                  <button className="ib" style={{ width:27, height:27, fontSize:12, color:"var(--r)" }} onClick={e => { e.stopPropagation(); setDelG(g); }}>🗑️</button>
+                  <span style={{ fontSize:11, color:"var(--t3)", width:14, textAlign:"center" }}>{isExp?"▲":"▼"}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Expanded: Notes */}
+            {isExp && (
+              <div style={{ borderTop:"1px solid var(--brd)", padding:"14px 16px" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                  <div className="st" style={{ fontSize:12 }}>📝 الملاحظات</div>
+                  {!editNote[g.id] && (
+                    <button className="btn bg bsm" onClick={() => setEditNote(p => ({ ...p, [g.id]: g.note || "" }))}>
+                      ✏️ تعديل
+                    </button>
+                  )}
+                </div>
+
+                {editNote[g.id] !== undefined && editNote[g.id] !== false ? (
+                  <div>
+                    <textarea
+                      className="fta"
+                      value={editNote[g.id]}
+                      onChange={e => setEditNote(p => ({ ...p, [g.id]: e.target.value }))}
+                      placeholder="أضف ملاحظاتك، خططك، أفكارك لهذا الهدف..."
+                      style={{ minHeight:100, marginBottom:10, fontSize:13 }}
+                      autoFocus
+                    />
+                    <div style={{ display:"flex", gap:8 }}>
+                      <button className="btn bp bsm" onClick={() => saveNote(g.id, editNote[g.id])}>💾 حفظ</button>
+                      <button className="btn bg bsm" onClick={() => setEditNote(p => ({ ...p, [g.id]: false }))}>إلغاء</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ background:"var(--bg3)", borderRadius:10, padding:"12px 14px", minHeight:60, border:"1px solid var(--brd)", borderRight:`3px solid ${g.color}` }}>
+                    {g.note ? (
+                      <div style={{ fontSize:13, lineHeight:1.8, color:"var(--t)", whiteSpace:"pre-wrap" }}>{g.note}</div>
+                    ) : (
+                      <div style={{ fontSize:12, color:"var(--t3)", fontStyle:"italic" }}>لا توجد ملاحظات بعد — اضغط تعديل لإضافة ملاحظاتك</div>
+                    )}
+                  </div>
+                )}
+
+                {/* Dates */}
+                {(g.start_date || g.end_date) && (
+                  <div style={{ display:"flex", gap:14, marginTop:12 }}>
+                    {g.start_date && <span style={{ fontSize:11, color:"var(--t2)" }}>🗓️ البداية: {g.start_date}</span>}
+                    {g.end_date   && <span style={{ fontSize:11, color:"var(--t2)" }}>🏁 النهاية: {g.end_date}</span>}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        </div>)}
-      </div>);
-    })}
-    <Modal open={showAdd} onClose={()=>setShowAdd(false)} title="إنشاء هدف جديد" icon="🎯"><GoalForm form={aF} setForm={setAF}/><div style={{display:"flex",gap:7,justifyContent:"flex-end",marginTop:14}}><button className="btn bg" onClick={()=>setShowAdd(false)}>إلغاء</button><button className="btn bp" onClick={addGoal}>إنشاء ✨</button></div></Modal>
-    <Modal open={!!editG} onClose={()=>setEditG(null)} title="تعديل الهدف" icon="✏️"><GoalForm form={eF} setForm={setEF}/><div style={{display:"flex",gap:7,justifyContent:"flex-end",marginTop:14}}><button className="btn bg" onClick={()=>setEditG(null)}>إلغاء</button><button className="btn bp" onClick={saveEdit}>حفظ ✅</button></div></Modal>
-    <Confirm open={!!delG} onClose={()=>setDelG(null)} onOk={doDelete} title="حذف الهدف" msg={`حذف "${delG?.title}"؟`}/>
-  </div>);
+        );
+      })}
+
+      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="إنشاء هدف جديد" icon="🎯">
+        <GoalForm form={aF} setForm={setAF}/>
+        <div style={{ display:"flex", gap:7, justifyContent:"flex-end", marginTop:14 }}>
+          <button className="btn bg" onClick={() => setShowAdd(false)}>إلغاء</button>
+          <button className="btn bp" onClick={addGoal}>إنشاء ✨</button>
+        </div>
+      </Modal>
+
+      <Modal open={!!editG} onClose={() => setEditG(null)} title="تعديل الهدف" icon="✏️">
+        <GoalForm form={eF} setForm={setEF}/>
+        <div style={{ display:"flex", gap:7, justifyContent:"flex-end", marginTop:14 }}>
+          <button className="btn bg" onClick={() => setEditG(null)}>إلغاء</button>
+          <button className="btn bp" onClick={saveEdit}>حفظ ✅</button>
+        </div>
+      </Modal>
+
+      <Confirm open={!!delG} onClose={() => setDelG(null)} onOk={doDelete} title="حذف الهدف" msg={`هل تريد حذف "${delG?.title}"؟`}/>
+    </div>
+  );
 }
-// ── TASK FORM (standalone to prevent re-mount on each keystroke) ──
-function TaskForm({form, setForm, goals}){
-  const today = toDay();
-  return(<>
-    <div style={{marginBottom:11}}><label className="fl">عنوان المهمة *</label><input className="fi" value={form.title||""} onChange={e=>setForm(p=>({...p,title:e.target.value}))} placeholder="ما الذي تريد إنجازه؟"/></div>
-    <div className="fr"><div style={{marginBottom:11}}><label className="fl">الأولوية</label><select className="fs" value={form.priority||"medium"} onChange={e=>setForm(p=>({...p,priority:e.target.value}))}><option value="high">🔴 عالية</option><option value="medium">🟡 متوسطة</option><option value="low">🔵 منخفضة</option></select></div><div style={{marginBottom:11}}><label className="fl">التاريخ</label><input type="date" className="fi" value={form.date||today} onChange={e=>setForm(p=>({...p,date:e.target.value}))}/></div></div>
-    <div className="fr"><div style={{marginBottom:11}}><label className="fl">⏰ وقت التذكير</label><input type="time" className="fi" value={form.time||""} onChange={e=>setForm(p=>({...p,time:e.target.value}))}/></div><div style={{marginBottom:11}}><label className="fl">🔁 التكرار</label><select className="fs" value={form.repeat||"none"} onChange={e=>setForm(p=>({...p,repeat:e.target.value,weekDays:[]}))}><option value="none">لا تكرار</option><option value="daily">🔁 يومي</option><option value="weekly">📆 أسبوعي</option><option value="monthly">🗓️ شهري</option></select></div></div>
-    {form.repeat==="weekly"&&<div style={{marginBottom:11}}><label className="fl">أيام الأسبوع</label><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{WD.map((d,i)=>{const s=(form.weekDays||[]).includes(i);return<div key={i} onClick={()=>setForm(p=>({...p,weekDays:s?p.weekDays.filter(x=>x!==i):[...(p.weekDays||[]),i]}))} style={{padding:"4px 9px",borderRadius:17,fontSize:11,fontWeight:600,cursor:"pointer",background:s?"var(--a)":"var(--bg3)",border:`1px solid ${s?"var(--a)":"var(--brd)"}`,color:s?"white":"var(--t2)",transition:"all .15s"}}>{d}</div>;})}  </div></div>}
-    <div style={{marginBottom:11}}><label className="fl">ربط بهدف</label><select className="fs" value={form.goalId||""} onChange={e=>setForm(p=>({...p,goalId:e.target.value}))}><option value="">بدون هدف</option>{goals.map(g=><option key={g.id} value={g.id}>{g.title}</option>)}</select></div>
-    <div style={{marginBottom:4}}><label className="fl">📝 ملاحظات</label><textarea className="fta" value={form.note||""} onChange={e=>setForm(p=>({...p,note:e.target.value}))} placeholder="اختياري..." style={{minHeight:55}}/></div>
-  </>);
-}
+
 
 // ── TASKS PAGE ───────────────────────────────────────────────
 function TasksPage({tasks,setTasks,goals,setGoals,addNotif,onToggle}){
