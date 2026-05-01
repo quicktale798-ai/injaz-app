@@ -199,17 +199,12 @@ function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset, o
   // So we DON'T reverse - RTL CSS handles it
   const displayDays = days; // RTL naturally puts Sat on right, Fri on left
 
-  // Tasks for selected day — hide completed tasks (they disappear on done)
-  const selTasks = tasks
-    .filter(t => t.date === selDay && !t.done)
-    .sort((a, b) => {
-      const p = {"high":0,"medium":1,"low":2};
-      return (p[a.priority]??1) - (p[b.priority]??1);
-    });
-
-  // Count including done for header display
-  const selAllTasks = tasks.filter(t => t.date === selDay);
+  // Tasks for selected day — only show pending (done tasks disappear immediately)
+  const selAllTasks  = tasks.filter(t => t.date === selDay);
   const selDoneCount = selAllTasks.filter(t => t.done).length;
+  const selTasks = selAllTasks
+    .filter(t => !t.done)
+    .sort((a, b) => ({"high":0,"medium":1,"low":2}[a.priority]??1) - ({"high":0,"medium":1,"low":2}[b.priority]??1));
 
   // Split: daily/one-time vs repeating tasks
   const dailyTasks     = selTasks.filter(t => !t.repeat || t.repeat === "none");
@@ -224,47 +219,7 @@ function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset, o
   const selDayName = WD[selDateObj.getDay()];
   // selDone calculated above as selDoneCount
 
-  async function toggle(id) {
-    const task = tasks.find(t => t.id === id); if (!task) return;
-    const done = !task.done;
-    const now  = new Date();
-    const ca   = done ? `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}` : null;
-    await supabase.from("tasks").update({ done, completed_at: ca }).eq("id", id);
 
-    if (done && task.repeat && task.repeat !== "none") {
-      // Repeating task completed → schedule next day + REMOVE from current view
-      const uid = (await supabase.auth.getUser()).data.user?.id;
-      const nd  = getNextRepeat(today, task.repeat);
-      const { data: ex } = await supabase.from("tasks").select("id")
-        .eq("user_id", uid).eq("title", task.title).eq("date", nd).eq("done", false).limit(1);
-      if (!ex || !ex.length) {
-        const { data: nx } = await supabase.from("tasks").insert({
-          user_id: uid, title: task.title, priority: task.priority, date: nd,
-          done: false, completed_at: null, repeat: task.repeat,
-          goal_id: task.goalId || task.goal_id || null,
-          time: task.time || null, week_days: task.weekDays || null, note: task.note || null
-        }).select().single();
-        if (nx) {
-          // Remove completed repeating task from list + add next occurrence
-          setTasks(prev => prev
-            .filter(t => t.id !== id)
-            .concat([{...nx, completedAt: null, goalId: nx.goal_id, weekDays: nx.week_days}])
-          );
-          addNotif({type:"success", icon:"🎉", title:"أحسنت!", msg: task.title});
-          addNotif({type:"info",    icon:"🔁", title:"ستظهر غداً 📅", msg: nd});
-          return;
-        }
-      }
-      // Already scheduled — just remove from current view
-      setTasks(prev => prev.filter(t => t.id !== id));
-      addNotif({type:"success", icon:"🎉", title:"أحسنت!", msg: task.title});
-      return;
-    }
-
-    // Non-repeating task — mark done in DB and hide from today's view
-    setTasks(prev => prev.map(t => t.id === id ? {...t, done, completedAt: ca} : t));
-    if (done) addNotif({type:"success", icon:"🎉", title:"أحسنت! ✅", msg: task.title});
-  }
 
   function TaskCard({t}) {
     const g  = goals.find(x => String(x.id) === String(t.goalId || t.goal_id));
