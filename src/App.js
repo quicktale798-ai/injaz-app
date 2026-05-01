@@ -162,167 +162,262 @@ function PrayerTracker(){
   );
 }
 // ── THIS WEEK PAGE ───────────────────────────────────────────
-function ThisWeekPage({tasks,setTasks,goals,setGoals,addNotif,weekOffset}){
-  const base=new Date();base.setDate(base.getDate()+weekOffset*7);
-  const ws=getWeekStart(base);const we=getWeekEnd(ws);
-  const today=toDay();
-  const wTasks=tasks.filter(t=>{const d=new Date(t.date+"T00:00:00");return d>=ws&&d<=we;});
-  const wDone=wTasks.filter(t=>t.done);
-  const tTasks=tasks.filter(t=>t.date===today);
-  const tDone=tTasks.filter(t=>t.done);
-  const wPct=wTasks.length?Math.round(wDone.length/wTasks.length*100):0;
-  const tPct=tTasks.length?Math.round(tDone.length/tTasks.length*100):0;
-  const days=Array.from({length:7},(_,i)=>{const d=new Date(ws);d.setDate(ws.getDate()+i);const s=d.toISOString().split("T")[0];const dt=tasks.filter(t=>t.date===s);return{d,s,dt,done:dt.filter(t=>t.done).length,isTod:s===today};});
-  const gProg=goals.filter(g=>g.status==="active").map(g=>{const gt=wTasks.filter(t=>String(t.goalId||t.goal_id)===String(g.id));const gd=gt.filter(t=>t.done);return{...g,wt:gt.length,wd:gd.length,wp:gt.length?Math.round(gd.length/gt.length*100):0};});
-  const quote=QUOTES[new Date().getDay()%QUOTES.length];
+function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset}) {
+  const base = new Date(); base.setDate(base.getDate() + weekOffset * 7);
+  const ws = getWeekStart(base);
+  const today = toDay();
+  const [selDay, setSelDay] = useState(today);
 
-  async function toggle(id){
-    const task=tasks.find(t=>t.id===id);if(!task)return;
-    const done=!task.done;const now=new Date();
-    const ca=done?`${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}`:null;
-    await supabase.from("tasks").update({done,completed_at:ca}).eq("id",id);
-    setTasks(prev=>prev.map(t=>t.id===id?{...t,done,completedAt:ca}:t));
-    if(done){
-      addNotif({type:"success",icon:"🎉",title:"أحسنت!",msg:task.title});
-      if(task.repeat&&task.repeat!=="none"){
-        const uid=(await supabase.auth.getUser()).data.user?.id;
-        const nd=getNextRepeat(today,task.repeat);
-        const{data:ex}=await supabase.from("tasks").select("id").eq("user_id",uid).eq("title",task.title).eq("date",nd).eq("done",false).limit(1);
-        if(!ex||!ex.length){const{data:nx}=await supabase.from("tasks").insert({user_id:uid,title:task.title,priority:task.priority,date:nd,done:false,completed_at:null,repeat:task.repeat,goal_id:task.goalId||task.goal_id||null,time:task.time||null,week_days:task.weekDays||null,note:task.note||null}).select().single();if(nx)setTasks(prev=>[...prev,{...nx,completedAt:null,goalId:nx.goal_id,weekDays:nx.week_days}]);}
+  // Always sync selDay to today when weekOffset changes
+  useEffect(() => {
+    const base2 = new Date(); base2.setDate(base2.getDate() + weekOffset * 7);
+    const ws2 = getWeekStart(base2);
+    const we2 = getWeekEnd(ws2);
+    const t = new Date(today + "T00:00:00");
+    if (t >= ws2 && t <= we2) setSelDay(today);
+    else setSelDay(ws2.toISOString().split("T")[0]);
+  }, [weekOffset]);
+
+  // Days of the week
+  const days = Array.from({length: 7}, (_, i) => {
+    const d = new Date(ws); d.setDate(ws.getDate() + i);
+    const s = d.toISOString().split("T")[0];
+    const dt = tasks.filter(t => t.date === s);
+    const done = dt.filter(t => t.done).length;
+    const pct = dt.length ? Math.round(done / dt.length * 100) : 0;
+    return { d, s, dt, done, total: dt.length, pct, isTod: s === today, isSel: s === selDay };
+  });
+
+  // Tasks for selected day - pending first, then done
+  const selTasks = tasks
+    .filter(t => t.date === selDay)
+    .sort((a, b) => (a.done === b.done ? 0 : a.done ? 1 : -1));
+
+  async function toggle(id) {
+    const task = tasks.find(t => t.id === id); if (!task) return;
+    const done = !task.done;
+    const now = new Date();
+    const ca = done ? `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}` : null;
+    await supabase.from("tasks").update({ done, completed_at: ca }).eq("id", id);
+
+    if (done && task.repeat && task.repeat !== "none") {
+      // Schedule next occurrence from today
+      const uid = (await supabase.auth.getUser()).data.user?.id;
+      const nd = getNextRepeat(today, task.repeat);
+      const { data: ex } = await supabase.from("tasks").select("id").eq("user_id", uid).eq("title", task.title).eq("date", nd).eq("done", false).limit(1);
+      if (!ex || !ex.length) {
+        const { data: nx } = await supabase.from("tasks").insert({
+          user_id: uid, title: task.title, priority: task.priority, date: nd,
+          done: false, completed_at: null, repeat: task.repeat,
+          goal_id: task.goalId || task.goal_id || null,
+          time: task.time || null, week_days: task.weekDays || null, note: task.note || null
+        }).select().single();
+        if (nx) {
+          setTasks(prev => prev.map(t => t.id === id ? { ...t, done, completedAt: ca } : t).concat([{ ...nx, completedAt: null, goalId: nx.goal_id, weekDays: nx.week_days }]));
+          addNotif({ type: "success", icon: "🎉", title: "أحسنت!", msg: task.title });
+          addNotif({ type: "info", icon: "🔁", title: "جُدولت للغد", msg: nd });
+          return;
+        }
       }
     }
+
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, done, completedAt: ca } : t));
+    if (done) addNotif({ type: "success", icon: "🎉", title: "أحسنت!", msg: task.title });
   }
 
-  return(
+  // Stats for week
+  const wTasks = tasks.filter(t => { const d = new Date(t.date + "T00:00:00"); return d >= ws && d <= getWeekEnd(ws); });
+  const wDone = wTasks.filter(t => t.done).length;
+  const wPct = wTasks.length ? Math.round(wDone / wTasks.length * 100) : 0;
+  const selDateObj = new Date(selDay + "T00:00:00");
+  const selDayName = WD[selDateObj.getDay()];
+  const selDone = selTasks.filter(t => t.done).length;
+
+  return (
     <div className="page">
-      <div className="g4">
+
+      {/* ── Stats row ── */}
+      <div className="g4" style={{ marginBottom: 16 }}>
         {[
-          {i:"✅",v:wDone.length,    l:"مكتملة الأسبوع", s:`من ${wTasks.length}`,          c:"var(--a)"},
-          {i:"📅",v:tDone.length,    l:"أنجزت اليوم",    s:`${tTasks.length} مهمة اليوم`,  c:"var(--g)"},
-          {i:"📈",v:wPct+"%",        l:"إنجاز الأسبوع",  s:wPct>=70?"🔥 رائع!":"💪 واصل", c:wPct>=70?"var(--g)":"var(--am)"},
-          {i:"🎯",v:gProg.length,    l:"أهداف نشطة",     s:"تتبّع أسبوعي",                c:"var(--b)"},
-        ].map((s,i)=>(
-          <div key={i} style={{background:"var(--bg2)",border:"1px solid var(--brd)",borderRadius:14,padding:"14px 16px",display:"flex",alignItems:"center",gap:12}}>
-            <div style={{width:44,height:44,borderRadius:12,background:`${["rgba(124,110,240,.15)","rgba(16,185,129,.15)","rgba(245,158,11,.15)","rgba(59,130,246,.15)"][i]}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{s.i}</div>
+          { i: "📅", v: wDone + "/" + wTasks.length, l: "إنجاز الأسبوع", c: "var(--a)" },
+          { i: "📈", v: wPct + "%",  l: "نسبة الأسبوع", c: wPct >= 70 ? "var(--g)" : "var(--am)" },
+          { i: "✅", v: selDone,     l: `أنجزت — ${selDayName}`, c: "var(--g)" },
+          { i: "⏳", v: selTasks.filter(t => !t.done).length, l: `متبقية — ${selDayName}`, c: "var(--am)" },
+        ].map((s, i) => (
+          <div key={i} style={{ background: "var(--bg2)", border: "1px solid var(--brd)", borderRadius: 13, padding: "13px 15px", display: "flex", alignItems: "center", gap: 11 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: `rgba(${["124,110,240","245,158,11","16,185,129","245,158,11"][i]},.14)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 21, flexShrink: 0 }}>{s.i}</div>
             <div>
-              <div style={{fontSize:22,fontWeight:900,fontFamily:"Tajawal",color:s.c,lineHeight:1}}>{s.v}</div>
-              <div style={{fontSize:10,color:"var(--t2)",marginTop:3}}>{s.l}</div>
-              <div style={{fontSize:9,color:s.c,marginTop:1,fontWeight:600}}>{s.s}</div>
+              <div style={{ fontSize: 21, fontWeight: 900, fontFamily: "Tajawal", color: s.c, lineHeight: 1 }}>{s.v}</div>
+              <div style={{ fontSize: 10, color: "var(--t2)", marginTop: 3 }}>{s.l}</div>
             </div>
           </div>
         ))}
       </div>
-      <div className="g3c">
-        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+
+      {/* ── Week calendar strip ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6, marginBottom: 16 }}>
+        {days.map(d => (
+          <div key={d.s} onClick={() => setSelDay(d.s)} style={{
+            borderRadius: 14, padding: "12px 6px 10px", textAlign: "center", cursor: "pointer",
+            transition: "all .2s",
+            background: d.isSel
+              ? "linear-gradient(135deg,var(--a),var(--a3))"
+              : d.isTod ? "rgba(124,110,240,.1)" : "var(--bg2)",
+            border: `1px solid ${d.isSel ? "var(--a)" : d.isTod ? "rgba(124,110,240,.3)" : "var(--brd)"}`,
+            boxShadow: d.isSel ? "0 4px 16px rgba(124,110,240,.4)" : "none",
+            transform: d.isSel ? "translateY(-2px)" : "none",
+          }}>
+            {/* Day name */}
+            <div style={{ fontSize: 9, fontWeight: 700, color: d.isSel ? "rgba(255,255,255,.8)" : d.isTod ? "var(--a2)" : "var(--t3)", marginBottom: 4 }}>
+              {WD[d.d.getDay()]}
+            </div>
+            {/* Date number */}
+            <div style={{ fontSize: 18, fontWeight: 900, fontFamily: "Tajawal", lineHeight: 1, marginBottom: 6, color: d.isSel ? "white" : d.isTod ? "var(--a2)" : "var(--t)" }}>
+              {d.d.getDate()}
+            </div>
+            {/* Progress ring */}
+            {d.total > 0 ? (
+              <div style={{ position: "relative", width: 28, height: 28, margin: "0 auto 4px" }}>
+                <svg width="28" height="28" viewBox="0 0 28 28" style={{ transform: "rotate(-90deg)" }}>
+                  <circle cx="14" cy="14" r="11" fill="none" stroke={d.isSel ? "rgba(255,255,255,.2)" : "var(--bg4)"} strokeWidth="3"/>
+                  <circle cx="14" cy="14" r="11" fill="none"
+                    stroke={d.isSel ? "white" : d.pct === 100 ? "var(--g)" : "var(--a)"}
+                    strokeWidth="3" strokeLinecap="round"
+                    strokeDasharray={69.1}
+                    strokeDashoffset={69.1 - (69.1 * d.pct / 100)}
+                    style={{ transition: "stroke-dashoffset .6s ease" }}/>
+                </svg>
+                <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontSize: 7, fontWeight: 900, color: d.isSel ? "white" : d.pct === 100 ? "var(--g)" : "var(--a)", fontFamily: "Tajawal" }}>
+                  {d.pct}%
+                </div>
+              </div>
+            ) : (
+              <div style={{ width: 28, height: 28, margin: "0 auto 4px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>
+                {d.isSel ? "📋" : "—"}
+              </div>
+            )}
+            {/* Task count dots */}
+            <div style={{ fontSize: 9, color: d.isSel ? "rgba(255,255,255,.75)" : "var(--t3)", fontWeight: 600 }}>
+              {d.total === 0 ? "فارغ" : `${d.done}/${d.total}`}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Main area: tasks + sidebar ── */}
+      <div className="g3c" style={{ alignItems: "start" }}>
+
+        {/* Tasks for selected day */}
+        <div style={{ gridColumn: "span 2" }}>
           <div className="card">
-            <div className="sh">
+            <div className="sh" style={{ marginBottom: 14 }}>
               <div className="st">
-                📋 مهام اليوم
-                <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:tPct===100?"rgba(16,185,129,.15)":"var(--bg3)",color:tPct===100?"var(--g)":"var(--t3)"}}>{tDone.length}/{tTasks.length}</span>
+                📋 {selDayName}، {selDateObj.getDate()} {selDateObj.toLocaleDateString("ar-EG", { month: "long" })}
+                <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: selDone === selTasks.length && selTasks.length > 0 ? "rgba(16,185,129,.15)" : "var(--bg3)", color: selDone === selTasks.length && selTasks.length > 0 ? "var(--g)" : "var(--t3)" }}>
+                  {selDone}/{selTasks.length}
+                </span>
+                {selDay === today && <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 20, background: "rgba(124,110,240,.15)", color: "var(--a2)", fontWeight: 700 }}>اليوم 📍</span>}
               </div>
-              <div style={{position:"relative",width:38,height:38}}>
-                <svg width="38" height="38" viewBox="0 0 38 38"><circle cx="19" cy="19" r="14" fill="none" stroke="var(--bg4)" strokeWidth="4"/><circle cx="19" cy="19" r="14" fill="none" stroke="var(--a)" strokeWidth="4" strokeLinecap="round" strokeDasharray={88} strokeDashoffset={88-(88*tPct/100)} style={{transform:"rotate(-90deg)",transformOrigin:"19px 19px",transition:"stroke-dashoffset .8s"}}/></svg>
-                <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",fontSize:8,fontWeight:900,color:"var(--a)",fontFamily:"Tajawal"}}>{tPct}%</div>
+              {/* Progress bar for day */}
+              {selTasks.length > 0 && <PBar pct={selTasks.length ? Math.round(selDone / selTasks.length * 100) : 0} color="var(--a)" h={4}/>}
+            </div>
+
+            {selTasks.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--t3)" }}>
+                <div style={{ fontSize: 44, marginBottom: 10 }}>🗓️</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--t2)", marginBottom: 4 }}>لا مهام لهذا اليوم</div>
+                <div style={{ fontSize: 11 }}>أضف مهمة من صفحة المهام بتاريخ {selDay}</div>
               </div>
-            </div>
-            {tTasks.length===0?<div style={{textAlign:"center",padding:"32px 16px",color:"var(--t3)"}}>
-              <div style={{fontSize:40,marginBottom:10}}>🌅</div>
-              <div style={{fontSize:13,fontWeight:600,color:"var(--t2)",marginBottom:4}}>لا مهام اليوم</div>
-              <div style={{fontSize:11}}>أضف مهمة من صفحة المهام</div>
-            </div>
-            :[...tTasks].sort((a,b)=>a.done?1:-1).map(t=>{
-              const g=goals.find(x=>String(x.id)===String(t.goalId||t.goal_id));
-              const pc=t.priority==="high"?"var(--r)":t.priority==="medium"?"var(--am)":"var(--b)";
-              return(
-                <div key={t.id} style={{
-                  background:t.done?"rgba(16,185,129,.04)":"var(--bg3)",
-                  border:`1px solid ${t.done?"rgba(16,185,129,.15)":"var(--brd)"}`,
-                  borderRadius:11,padding:"11px 13px",marginBottom:7,
-                  borderRight:`3px solid ${pc}`,opacity:t.done?.65:1,transition:"all .2s"
-                }}>
-                  <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
-                    <div className="cb" onClick={()=>toggle(t.id)} style={{borderColor:t.done?"var(--g)":pc,background:t.done?"var(--g)":"transparent",marginTop:2}}>{t.done?"✓":""}</div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:"flex",justifyContent:"space-between",gap:6,marginBottom:5}}>
-                        <div style={{fontSize:13,fontWeight:600,textDecoration:t.done?"line-through":"none",color:t.done?"var(--t3)":"var(--t)"}}>{t.title}</div>
-                        {t.time&&<span className="bdg" style={{background:"rgba(245,158,11,.12)",color:"var(--am)",flexShrink:0}}>⏰{t.time}</span>}
-                      </div>
-                      <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-                        {g&&<span className="bdg" style={{background:`${g.color}18`,color:g.color}}>🎯 {g.title}</span>}
-                        {t.done&&t.completedAt&&<span className="bdg" style={{background:"rgba(16,185,129,.12)",color:"var(--g)"}}>✅ {t.completedAt}</span>}
-                        {t.note&&<span className="bdg" style={{background:"var(--bg4)",color:"var(--t2)"}}>📝 {t.note.slice(0,20)}{t.note.length>20?"...":""}</span>}
+            ) : (
+              <div>
+                {selTasks.map(t => {
+                  const g = goals.find(x => String(x.id) === String(t.goalId || t.goal_id));
+                  const pc = t.priority === "high" ? "var(--r)" : t.priority === "medium" ? "var(--am)" : "var(--b)";
+                  return (
+                    <div key={t.id} style={{
+                      display: "flex", alignItems: "flex-start", gap: 12,
+                      padding: "13px 14px", borderRadius: 12, marginBottom: 8,
+                      background: t.done ? "rgba(16,185,129,.04)" : "var(--bg3)",
+                      border: `1px solid ${t.done ? "rgba(16,185,129,.15)" : "var(--brd)"}`,
+                      borderRight: `4px solid ${t.done ? "var(--g)" : pc}`,
+                      opacity: t.done ? 0.6 : 1, transition: "all .25s",
+                    }}>
+                      {/* Checkbox */}
+                      <div onClick={() => toggle(t.id)} style={{
+                        width: 22, height: 22, borderRadius: 7, flexShrink: 0, marginTop: 1, cursor: "pointer",
+                        border: `2px solid ${t.done ? "var(--g)" : pc}`,
+                        background: t.done ? "var(--g)" : "transparent",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        color: "white", fontSize: 12, fontWeight: 700, transition: "all .2s",
+                      }}>{t.done ? "✓" : ""}</div>
+
+                      {/* Content */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, textDecoration: t.done ? "line-through" : "none", color: t.done ? "var(--t3)" : "var(--t)" }}>{t.title}</div>
+                          {t.time && <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 20, background: "rgba(245,158,11,.12)", color: "var(--am)", fontWeight: 700, flexShrink: 0 }}>⏰ {t.time}</span>}
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                          <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 18, fontWeight: 700, background: t.priority === "high" ? "rgba(239,68,68,.1)" : t.priority === "medium" ? "rgba(245,158,11,.1)" : "rgba(59,130,246,.1)", color: pc }}>
+                            {t.priority === "high" ? "🔴 عالية" : t.priority === "medium" ? "🟡 متوسطة" : "🔵 منخفضة"}
+                          </span>
+                          {g && <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 18, fontWeight: 700, background: `${g.color}18`, color: g.color }}>🎯 {g.title}</span>}
+                          {t.repeat && t.repeat !== "none" && <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 18, fontWeight: 700, background: "rgba(124,110,240,.1)", color: "var(--a2)" }}>🔁 {t.repeat === "daily" ? "يومي" : t.repeat === "weekly" ? "أسبوعي" : "شهري"}</span>}
+                          {t.done && t.completedAt && <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 18, fontWeight: 700, background: "rgba(16,185,129,.1)", color: "var(--g)" }}>✅ {t.completedAt}</span>}
+                        </div>
+                        {t.note && <div style={{ marginTop: 7, padding: "5px 9px", background: "var(--bg4)", borderRadius: 7, borderRight: "2px solid var(--a3)", fontSize: 11, color: "var(--t2)" }}>📝 {t.note}</div>}
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Sidebar: prayers + goals */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <PrayerTracker/>
+          {/* Goal progress this week */}
+          <div className="card">
+            <div className="sh" style={{ marginBottom: 12 }}>
+              <div className="st">🎯 الأهداف</div>
+              <span style={{ fontSize: 10, color: "var(--t3)", background: "var(--bg3)", padding: "2px 7px", borderRadius: 20 }}>هذا الأسبوع</span>
+            </div>
+            {goals.filter(g => g.status === "active").length === 0 ? (
+              <div style={{ textAlign: "center", padding: "16px 0", color: "var(--t3)", fontSize: 12 }}>لا أهداف نشطة</div>
+            ) : goals.filter(g => g.status === "active").map(g => {
+              const gt = wTasks.filter(t => String(t.goalId || t.goal_id) === String(g.id));
+              const gd = gt.filter(t => t.done);
+              const gp = gt.length ? Math.round(gd.length / gt.length * 100) : 0;
+              return (
+                <div key={g.id} style={{ marginBottom: 13 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: g.color, boxShadow: `0 0 5px ${g.color}60`, flexShrink: 0 }}/>
+                      <span style={{ fontSize: 12, fontWeight: 600 }}>{g.title}</span>
+                    </div>
+                    <span style={{ fontSize: 12, color: g.color, fontWeight: 800, fontFamily: "Tajawal" }}>{gp}%</span>
                   </div>
+                  <PBar pct={gp} color={g.color} h={6}/>
+                  <div style={{ fontSize: 9, color: "var(--t3)", marginTop: 3 }}>{gd.length}/{gt.length} مهمة</div>
                 </div>
               );
             })}
           </div>
-          <div className="card">
-            <div className="sh"><div className="st">📆 أيام الأسبوع</div><span style={{fontSize:10,color:"var(--t3)"}}>{fmtDate(ws)} — {fmtDate(we)}</span></div>
-            {days.map(d=>{
-              const pct2=d.dt.length?Math.round(d.done/d.dt.length*100):0;
-              const isPast=d.s<toDay()&&!d.isTod;
-              return(
-              <div key={d.s} style={{display:"flex",alignItems:"center",gap:10,marginBottom:7,padding:"8px 11px",borderRadius:10,background:d.isTod?"linear-gradient(135deg,rgba(124,110,240,.1),rgba(92,79,212,.05))":"var(--bg3)",border:`1px solid ${d.isTod?"rgba(124,110,240,.3)":"var(--brd)"}`,transition:"all .2s"}}>
-                <div style={{width:38,flexShrink:0,textAlign:"center"}}>
-                  <div style={{fontSize:9,color:d.isTod?"var(--a2)":isPast?"var(--t3)":"var(--t2)",fontWeight:700}}>{WD[d.d.getDay()]}</div>
-                  <div style={{fontSize:15,fontWeight:900,color:d.isTod?"var(--a2)":isPast?"var(--t3)":"var(--t)",fontFamily:"Tajawal",lineHeight:1.2}}>{d.d.getDate()}</div>
-                </div>
-                <div style={{flex:1}}>
-                  <PBar pct={pct2} color={d.isTod?"var(--a)":isPast&&pct2===100?"var(--g)":isPast?"var(--r)":"var(--bg4)"} h={6}/>
-                  {d.dt.length===0&&<div style={{fontSize:9,color:"var(--t3)",marginTop:2}}>لا مهام</div>}
-                </div>
-                <div style={{fontSize:10,fontWeight:700,color:pct2===100?"var(--g)":d.isTod?"var(--a2)":"var(--t3)",width:30,textAlign:"left",flexShrink:0}}>{d.done}/{d.dt.length}</div>
-              </div>
-            );})}
+          {/* Quote */}
+          <div style={{ background: "linear-gradient(135deg,rgba(124,110,240,.08),rgba(92,79,212,.04))", border: "1px solid rgba(124,110,240,.15)", borderRadius: 13, padding: "13px 15px" }}>
+            <div style={{ fontSize: 32, color: "var(--a)", opacity: .15, lineHeight: 1, fontFamily: "serif", marginBottom: -3 }}>"</div>
+            <div style={{ fontSize: 12, lineHeight: 1.85, color: "var(--t)", fontWeight: 500 }}>{QUOTES[new Date().getDay() % QUOTES.length]}</div>
+            <div style={{ fontSize: 10, color: "var(--a2)", marginTop: 9, fontWeight: 700 }}>✨ اقتباس اليوم</div>
           </div>
         </div>
-        <div className="card">
-          <div className="sh"><div className="st">🎯 تقدم الأهداف</div><span style={{fontSize:10,color:"var(--t3)",background:"var(--bg3)",padding:"2px 7px",borderRadius:20}}>هذا الأسبوع</span></div>
-          {gProg.length===0?<div className="empty"><div style={{fontSize:30,marginBottom:7}}>🎯</div><div style={{fontSize:12}}>لا أهداف نشطة</div></div>
-          :gProg.map(g=>(
-            <div key={g.id} style={{marginBottom:14,background:"var(--bg3)",border:"1px solid var(--brd)",borderRadius:11,padding:"11px 13px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <div style={{width:10,height:10,borderRadius:"50%",background:g.color,boxShadow:`0 0 6px ${g.color}60`,flexShrink:0}}/>
-                  <span style={{fontSize:13,fontWeight:700}}>{g.title}</span>
-                </div>
-                <div style={{textAlign:"left"}}>
-                  <div style={{fontSize:16,color:g.color,fontWeight:900,fontFamily:"Tajawal",lineHeight:1}}>{g.wp}%</div>
-                  <div style={{fontSize:9,color:"var(--t3)"}}>إجمالي {g.progress}%</div>
-                </div>
-              </div>
-              <PBar pct={g.wp} color={g.color} h={8}/>
-              <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
-                <span style={{fontSize:10,color:"var(--t2)",fontWeight:600}}>{g.wd} من {g.wt} مهمة هذا الأسبوع</span>
-                {g.wp===100&&<span style={{fontSize:10,color:"var(--g)",fontWeight:700}}>🎉 أكملت!</span>}
-                {g.wt===0&&<span style={{fontSize:10,color:"var(--t3)",fontStyle:"italic"}}>لا مهام مرتبطة</span>}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:11}}>
-          <PrayerTracker/>
-          <div style={{background:"linear-gradient(135deg,rgba(124,110,240,.08),rgba(92,79,212,.04))",border:"1px solid rgba(124,110,240,.15)",borderRadius:13,padding:"13px 15px",flex:1}}>
-            <div style={{fontSize:34,color:"var(--a)",opacity:.15,lineHeight:1,fontFamily:"serif",marginBottom:-3}}>"</div>
-            <div style={{fontSize:12,lineHeight:1.85,color:"var(--t)",fontWeight:500}}>{quote}</div>
-            <div style={{fontSize:10,color:"var(--a2)",marginTop:9,fontWeight:700}}>✨ اقتباس اليوم</div>
-          </div>
-        </div>
+
       </div>
     </div>
   );
 }
-// ── GOAL FORM (standalone) ───────────────────────────────────
-function GoalForm({form, setForm}){
-  return(<>
-    <div style={{marginBottom:12}}><label className="fl">عنوان الهدف *</label><input className="fi" value={form.title||""} onChange={e=>setForm(p=>({...p,title:e.target.value}))} placeholder="مثال: قراءة 12 كتاب"/></div>
-    <div className="fr"><div style={{marginBottom:12}}><label className="fl">الفئة</label><input className="fi" value={form.category||""} onChange={e=>setForm(p=>({...p,category:e.target.value}))} placeholder="تعليم، صحة..."/></div><div style={{marginBottom:12}}><label className="fl">الحالة</label><select className="fs" value={form.status||"active"} onChange={e=>setForm(p=>({...p,status:e.target.value}))}><option value="active">نشط</option><option value="paused">متوقف</option><option value="done">مكتمل</option></select></div></div>
-    <div className="fr"><div style={{marginBottom:12}}><label className="fl">البداية</label><input type="date" className="fi" value={form.startDate||""} onChange={e=>setForm(p=>({...p,startDate:e.target.value}))}/></div><div style={{marginBottom:12}}><label className="fl">النهاية</label><input type="date" className="fi" value={form.endDate||""} onChange={e=>setForm(p=>({...p,endDate:e.target.value}))}/></div></div>
-    <div style={{marginBottom:12}}><label className="fl">اللون</label><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{COLORS.map(c=><div key={c} onClick={()=>setForm(p=>({...p,color:c}))} style={{width:24,height:24,borderRadius:6,background:c,cursor:"pointer",border:(form.color||"#6366f1")===c?"3px solid white":"2px solid transparent",transition:"all .15s"}}/>)}</div></div>
-  </>);
-}
+
 
 // ── GOALS PAGE ───────────────────────────────────────────────
 function GoalsPage({goals,setGoals,tasks,addNotif,weekOffset}){
