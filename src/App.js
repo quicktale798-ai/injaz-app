@@ -667,6 +667,31 @@ function GoalsPage({goals, setGoals, tasks, addNotif, weekOffset}) {
 }
 
 
+// ── TASK FORM ────────────────────────────────────────────────
+function TaskForm({form, setForm, goals}) {
+  const today = toDay();
+  return (<>
+    <div style={{marginBottom:11}}><label className="fl">عنوان المهمة *</label><input className="fi" value={form.title||""} onChange={e=>setForm(p=>({...p,title:e.target.value}))} placeholder="ما الذي تريد إنجازه؟"/></div>
+    <div className="fr">
+      <div style={{marginBottom:11}}><label className="fl">الأولوية</label><select className="fs" value={form.priority||"medium"} onChange={e=>setForm(p=>({...p,priority:e.target.value}))}><option value="high">🔴 عالية</option><option value="medium">🟡 متوسطة</option><option value="low">🔵 منخفضة</option></select></div>
+      <div style={{marginBottom:11}}><label className="fl">التاريخ</label><input type="date" className="fi" value={form.date||today} onChange={e=>setForm(p=>({...p,date:e.target.value}))}/></div>
+    </div>
+    <div className="fr">
+      <div style={{marginBottom:11}}><label className="fl">⏰ وقت التذكير</label><input type="time" className="fi" value={form.time||""} onChange={e=>setForm(p=>({...p,time:e.target.value}))}/></div>
+      <div style={{marginBottom:11}}><label className="fl">🔁 التكرار</label><select className="fs" value={form.repeat||"none"} onChange={e=>setForm(p=>({...p,repeat:e.target.value,weekDays:[]}))}><option value="none">لا تكرار</option><option value="daily">🔁 يومي</option><option value="weekly">📆 أسبوعي</option><option value="monthly">🗓️ شهري</option></select></div>
+    </div>
+    {form.repeat==="weekly" && (
+      <div style={{marginBottom:11}}><label className="fl">أيام الأسبوع</label>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          {WD.map((d,i)=>{const s=(form.weekDays||[]).includes(i);return<div key={i} onClick={()=>setForm(p=>({...p,weekDays:s?p.weekDays.filter(x=>x!==i):[...(p.weekDays||[]),i]}))} style={{padding:"4px 9px",borderRadius:17,fontSize:11,fontWeight:600,cursor:"pointer",background:s?"var(--a)":"var(--bg3)",border:`1px solid ${s?"var(--a)":"var(--brd)"}`,color:s?"white":"var(--t2)",transition:"all .15s"}}>{d}</div>;})}
+        </div>
+      </div>
+    )}
+    <div style={{marginBottom:11}}><label className="fl">ربط بهدف</label><select className="fs" value={form.goalId||""} onChange={e=>setForm(p=>({...p,goalId:e.target.value}))}><option value="">بدون هدف</option>{goals.map(g=><option key={g.id} value={g.id}>{g.title}</option>)}</select></div>
+    <div style={{marginBottom:4}}><label className="fl">📝 ملاحظات</label><textarea className="fta" value={form.note||""} onChange={e=>setForm(p=>({...p,note:e.target.value}))} placeholder="اختياري..." style={{minHeight:55}}/></div>
+  </>);
+}
+
 // ── TASKS PAGE ───────────────────────────────────────────────
 function TasksPage({tasks,setTasks,goals,setGoals,addNotif,onToggle}){
   const [filter,setFilter]=useState("today");
