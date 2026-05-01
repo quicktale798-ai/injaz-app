@@ -255,8 +255,8 @@ function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset}) 
       </div>
 
       {/* ── Week calendar strip ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6, marginBottom: 16 }}>
-        {days.map(d => (
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6, marginBottom: 16, direction: "ltr" }}>
+        {[...days].reverse().map(d => (
           <div key={d.s} onClick={() => setSelDay(d.s)} style={{
             borderRadius: 14, padding: "12px 6px 10px", textAlign: "center", cursor: "pointer",
             transition: "all .2s",
