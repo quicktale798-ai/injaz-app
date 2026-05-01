@@ -483,13 +483,13 @@ function GoalsPage({goals, setGoals, tasks, addNotif, weekOffset}) {
   async function addGoal() {
     if (!aF.title.trim()) return;
     const uid = (await supabase.auth.getUser()).data.user?.id;
-    const { data } = await supabase.from("goals").insert({
+    const { data, error } = await supabase.from("goals").insert({
       user_id: uid, title: aF.title, category: aF.category || "",
       progress: 0, status: aF.status || "active", color: aF.color || "#6366f1",
-      start_date: aF.startDate || "", end_date: aF.endDate || "",
-      subtasks: [], note: ""
+      start_date: aF.startDate || "", end_date: aF.endDate || ""
     }).select().single();
-    if (data) { setGoals(p => [...p, { ...data, subtasks: [], note: "" }]); addNotif({ type:"success", icon:"🎯", title:"تم إنشاء الهدف", msg: data.title }); }
+    if (data) { setGoals(p => [...p, { ...data, subtasks: [], note: data.note || "" }]); addNotif({ type:"success", icon:"🎯", title:"تم إنشاء الهدف", msg: data.title }); }
+    else if (error) { addNotif({ type:"warning", icon:"⚠️", title:"خطأ في الإضافة", msg: error.message }); console.error("Goal insert error:", error); }
     setShowAdd(false);
     setAF({ title:"", category:"", color:"#6366f1", status:"active", startDate:"", endDate:"" });
   }
