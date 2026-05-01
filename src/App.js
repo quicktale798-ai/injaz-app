@@ -104,6 +104,10 @@ body{font-family:'IBM Plex Sans Arabic','Tajawal',sans-serif;background:var(--bg
 .sp{width:16px;height:16px;border:2px solid rgba(124,110,240,.3);border-top-color:var(--a);border-radius:50%;animation:spin .6s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
 .mob-ov{display:none;}
+.card:hover{border-color:var(--brd2);box-shadow:0 4px 20px rgba(0,0,0,.3);}
+.ni:hover .ni-ic{transform:scale(1.15);}
+.ni-ic{transition:transform .15s;}
+.cb:hover{transform:scale(1.12);}
 .pomo-btn{width:44px;height:44px;border-radius:50%;border:none;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:all .2s;}
 .pomo-main{background:var(--a);color:white;width:56px;height:56px;font-size:22px;box-shadow:0 4px 16px rgba(124,110,240,.4);}
 .pomo-main:hover{transform:scale(1.05);}
@@ -192,35 +196,61 @@ function ThisWeekPage({tasks,setTasks,goals,setGoals,addNotif,weekOffset}){
   return(
     <div className="page">
       <div className="g4">
-        {[{i:"✅",v:wDone.length,l:"مكتملة الأسبوع",s:`${wTasks.length} إجمالاً`,c:"var(--a)"},{i:"📅",v:`${tDone.length}/${tTasks.length}`,l:"إنجاز اليوم",s:tPct+"%",c:"var(--g)"},{i:"📈",v:wPct+"%",l:"نسبة الأسبوع",s:wPct>=70?"🔥 رائع":"💪 استمر",c:wPct>=70?"var(--g)":"var(--am)"},{i:"🎯",v:gProg.length,l:"أهداف نشطة",s:"هذا الأسبوع",c:"var(--b)"}].map((s,i)=>(
-          <div key={i} className="sm"><span style={{fontSize:22}}>{s.i}</span><div><div style={{fontSize:19,fontWeight:900,fontFamily:"Tajawal",color:s.c,lineHeight:1}}>{s.v}</div><div style={{fontSize:9,color:"var(--t2)",marginTop:2}}>{s.l}</div></div></div>
+        {[
+          {i:"✅",v:wDone.length,    l:"مكتملة الأسبوع", s:`من ${wTasks.length}`,          c:"var(--a)"},
+          {i:"📅",v:tDone.length,    l:"أنجزت اليوم",    s:`${tTasks.length} مهمة اليوم`,  c:"var(--g)"},
+          {i:"📈",v:wPct+"%",        l:"إنجاز الأسبوع",  s:wPct>=70?"🔥 رائع!":"💪 واصل", c:wPct>=70?"var(--g)":"var(--am)"},
+          {i:"🎯",v:gProg.length,    l:"أهداف نشطة",     s:"تتبّع أسبوعي",                c:"var(--b)"},
+        ].map((s,i)=>(
+          <div key={i} style={{background:"var(--bg2)",border:"1px solid var(--brd)",borderRadius:14,padding:"14px 16px",display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:44,height:44,borderRadius:12,background:`${["rgba(124,110,240,.15)","rgba(16,185,129,.15)","rgba(245,158,11,.15)","rgba(59,130,246,.15)"][i]}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{s.i}</div>
+            <div>
+              <div style={{fontSize:22,fontWeight:900,fontFamily:"Tajawal",color:s.c,lineHeight:1}}>{s.v}</div>
+              <div style={{fontSize:10,color:"var(--t2)",marginTop:3}}>{s.l}</div>
+              <div style={{fontSize:9,color:s.c,marginTop:1,fontWeight:600}}>{s.s}</div>
+            </div>
+          </div>
         ))}
       </div>
       <div className="g3c">
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
           <div className="card">
             <div className="sh">
-              <div className="st">📋 مهام اليوم <span style={{fontSize:10,color:"var(--t3)",background:"var(--bg3)",padding:"2px 7px",borderRadius:20}}>{tDone.length}/{tTasks.length}</span></div>
+              <div className="st">
+                📋 مهام اليوم
+                <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:tPct===100?"rgba(16,185,129,.15)":"var(--bg3)",color:tPct===100?"var(--g)":"var(--t3)"}}>{tDone.length}/{tTasks.length}</span>
+              </div>
               <div style={{position:"relative",width:38,height:38}}>
                 <svg width="38" height="38" viewBox="0 0 38 38"><circle cx="19" cy="19" r="14" fill="none" stroke="var(--bg4)" strokeWidth="4"/><circle cx="19" cy="19" r="14" fill="none" stroke="var(--a)" strokeWidth="4" strokeLinecap="round" strokeDasharray={88} strokeDashoffset={88-(88*tPct/100)} style={{transform:"rotate(-90deg)",transformOrigin:"19px 19px",transition:"stroke-dashoffset .8s"}}/></svg>
                 <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",fontSize:8,fontWeight:900,color:"var(--a)",fontFamily:"Tajawal"}}>{tPct}%</div>
               </div>
             </div>
-            {tTasks.length===0?<div className="empty"><div style={{fontSize:32,marginBottom:7}}>🌟</div><div style={{fontSize:12}}>لا مهام اليوم</div></div>
+            {tTasks.length===0?<div style={{textAlign:"center",padding:"32px 16px",color:"var(--t3)"}}>
+              <div style={{fontSize:40,marginBottom:10}}>🌅</div>
+              <div style={{fontSize:13,fontWeight:600,color:"var(--t2)",marginBottom:4}}>لا مهام اليوم</div>
+              <div style={{fontSize:11}}>أضف مهمة من صفحة المهام</div>
+            </div>
             :[...tTasks].sort((a,b)=>a.done?1:-1).map(t=>{
               const g=goals.find(x=>String(x.id)===String(t.goalId||t.goal_id));
               const pc=t.priority==="high"?"var(--r)":t.priority==="medium"?"var(--am)":"var(--b)";
               return(
-                <div key={t.id} className={`tc ${t.done?"dn":""}`} style={{borderRight:`3px solid ${pc}`}}>
-                  <div style={{display:"flex",alignItems:"flex-start",gap:9}}>
-                    <div className="cb" onClick={()=>toggle(t.id)} style={{borderColor:t.done?"var(--g)":pc,background:t.done?"var(--g)":"transparent"}}>{t.done?"✓":""}</div>
+                <div key={t.id} style={{
+                  background:t.done?"rgba(16,185,129,.04)":"var(--bg3)",
+                  border:`1px solid ${t.done?"rgba(16,185,129,.15)":"var(--brd)"}`,
+                  borderRadius:11,padding:"11px 13px",marginBottom:7,
+                  borderRight:`3px solid ${pc}`,opacity:t.done?.65:1,transition:"all .2s"
+                }}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                    <div className="cb" onClick={()=>toggle(t.id)} style={{borderColor:t.done?"var(--g)":pc,background:t.done?"var(--g)":"transparent",marginTop:2}}>{t.done?"✓":""}</div>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:13,fontWeight:600,textDecoration:t.done?"line-through":"none",color:t.done?"var(--t3)":"var(--t)",marginBottom:4}}>{t.title}</div>
+                      <div style={{display:"flex",justifyContent:"space-between",gap:6,marginBottom:5}}>
+                        <div style={{fontSize:13,fontWeight:600,textDecoration:t.done?"line-through":"none",color:t.done?"var(--t3)":"var(--t)"}}>{t.title}</div>
+                        {t.time&&<span className="bdg" style={{background:"rgba(245,158,11,.12)",color:"var(--am)",flexShrink:0}}>⏰{t.time}</span>}
+                      </div>
                       <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-                        {g&&<span className="bdg" style={{background:`${g.color}18`,color:g.color}}>🎯{g.title}</span>}
-                        {t.time&&<span className="bdg" style={{background:"rgba(245,158,11,.1)",color:"var(--am)"}}>⏰{t.time}</span>}
-                        {t.done&&t.completedAt&&<span className="bdg" style={{background:"rgba(16,185,129,.1)",color:"var(--g)"}}>✅{t.completedAt}</span>}
-                        {t.note&&<span className="bdg" style={{background:"var(--bg4)",color:"var(--t3)"}}>📝</span>}
+                        {g&&<span className="bdg" style={{background:`${g.color}18`,color:g.color}}>🎯 {g.title}</span>}
+                        {t.done&&t.completedAt&&<span className="bdg" style={{background:"rgba(16,185,129,.12)",color:"var(--g)"}}>✅ {t.completedAt}</span>}
+                        {t.note&&<span className="bdg" style={{background:"var(--bg4)",color:"var(--t2)"}}>📝 {t.note.slice(0,20)}{t.note.length>20?"...":""}</span>}
                       </div>
                     </div>
                   </div>
@@ -229,32 +259,45 @@ function ThisWeekPage({tasks,setTasks,goals,setGoals,addNotif,weekOffset}){
             })}
           </div>
           <div className="card">
-            <div className="st" style={{marginBottom:10}}>📆 أيام الأسبوع</div>
-            {days.map(d=>(
-              <div key={d.s} style={{display:"flex",alignItems:"center",gap:9,marginBottom:7,padding:"6px 9px",borderRadius:8,background:d.isTod?"rgba(124,110,240,.08)":"var(--bg3)",border:`1px solid ${d.isTod?"rgba(124,110,240,.25)":"var(--brd)"}`}}>
-                <div style={{width:34,flexShrink:0,textAlign:"center"}}>
-                  <div style={{fontSize:8,color:d.isTod?"var(--a2)":"var(--t3)",fontWeight:700}}>{WD[d.d.getDay()]}</div>
-                  <div style={{fontSize:13,fontWeight:800,color:d.isTod?"var(--a2)":"var(--t)",fontFamily:"Tajawal"}}>{d.d.getDate()}</div>
+            <div className="sh"><div className="st">📆 أيام الأسبوع</div><span style={{fontSize:10,color:"var(--t3)"}}>{fmtDate(ws)} — {fmtDate(we)}</span></div>
+            {days.map(d=>{
+              const pct2=d.dt.length?Math.round(d.done/d.dt.length*100):0;
+              const isPast=d.s<toDay()&&!d.isTod;
+              return(
+              <div key={d.s} style={{display:"flex",alignItems:"center",gap:10,marginBottom:7,padding:"8px 11px",borderRadius:10,background:d.isTod?"linear-gradient(135deg,rgba(124,110,240,.1),rgba(92,79,212,.05))":"var(--bg3)",border:`1px solid ${d.isTod?"rgba(124,110,240,.3)":"var(--brd)"}`,transition:"all .2s"}}>
+                <div style={{width:38,flexShrink:0,textAlign:"center"}}>
+                  <div style={{fontSize:9,color:d.isTod?"var(--a2)":isPast?"var(--t3)":"var(--t2)",fontWeight:700}}>{WD[d.d.getDay()]}</div>
+                  <div style={{fontSize:15,fontWeight:900,color:d.isTod?"var(--a2)":isPast?"var(--t3)":"var(--t)",fontFamily:"Tajawal",lineHeight:1.2}}>{d.d.getDate()}</div>
                 </div>
-                <div style={{flex:1}}><PBar pct={d.dt.length?Math.round(d.done/d.dt.length*100):0} color={d.isTod?"var(--a)":"var(--g)"} h={5}/></div>
-                <div style={{fontSize:9,color:"var(--t3)",width:36,textAlign:"left",flexShrink:0}}>{d.done}/{d.dt.length}</div>
+                <div style={{flex:1}}>
+                  <PBar pct={pct2} color={d.isTod?"var(--a)":isPast&&pct2===100?"var(--g)":isPast?"var(--r)":"var(--bg4)"} h={6}/>
+                  {d.dt.length===0&&<div style={{fontSize:9,color:"var(--t3)",marginTop:2}}>لا مهام</div>}
+                </div>
+                <div style={{fontSize:10,fontWeight:700,color:pct2===100?"var(--g)":d.isTod?"var(--a2)":"var(--t3)",width:30,textAlign:"left",flexShrink:0}}>{d.done}/{d.dt.length}</div>
               </div>
-            ))}
+            );})}
           </div>
         </div>
         <div className="card">
           <div className="sh"><div className="st">🎯 تقدم الأهداف</div><span style={{fontSize:10,color:"var(--t3)",background:"var(--bg3)",padding:"2px 7px",borderRadius:20}}>هذا الأسبوع</span></div>
           {gProg.length===0?<div className="empty"><div style={{fontSize:30,marginBottom:7}}>🎯</div><div style={{fontSize:12}}>لا أهداف نشطة</div></div>
           :gProg.map(g=>(
-            <div key={g.id} style={{marginBottom:15}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                <div style={{display:"flex",alignItems:"center",gap:7}}><div style={{width:8,height:8,borderRadius:"50%",background:g.color,flexShrink:0}}/><span style={{fontSize:12,fontWeight:600}}>{g.title}</span></div>
-                <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:12,color:g.color,fontWeight:800,fontFamily:"Tajawal"}}>{g.wp}%</span><span style={{fontSize:9,color:"var(--t3)"}}>/{g.progress}%</span></div>
+            <div key={g.id} style={{marginBottom:14,background:"var(--bg3)",border:"1px solid var(--brd)",borderRadius:11,padding:"11px 13px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{width:10,height:10,borderRadius:"50%",background:g.color,boxShadow:`0 0 6px ${g.color}60`,flexShrink:0}}/>
+                  <span style={{fontSize:13,fontWeight:700}}>{g.title}</span>
+                </div>
+                <div style={{textAlign:"left"}}>
+                  <div style={{fontSize:16,color:g.color,fontWeight:900,fontFamily:"Tajawal",lineHeight:1}}>{g.wp}%</div>
+                  <div style={{fontSize:9,color:"var(--t3)"}}>إجمالي {g.progress}%</div>
+                </div>
               </div>
-              <PBar pct={g.wp} color={g.color} h={7}/>
-              <div style={{display:"flex",justifyContent:"space-between",marginTop:3}}>
-                <span style={{fontSize:9,color:"var(--t3)"}}>{g.wd}/{g.wt} مهمة</span>
-                <span style={{fontSize:9,color:"var(--t3)"}}>إجمالي {g.progress}%</span>
+              <PBar pct={g.wp} color={g.color} h={8}/>
+              <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
+                <span style={{fontSize:10,color:"var(--t2)",fontWeight:600}}>{g.wd} من {g.wt} مهمة هذا الأسبوع</span>
+                {g.wp===100&&<span style={{fontSize:10,color:"var(--g)",fontWeight:700}}>🎉 أكملت!</span>}
+                {g.wt===0&&<span style={{fontSize:10,color:"var(--t3)",fontStyle:"italic"}}>لا مهام مرتبطة</span>}
               </div>
             </div>
           ))}
@@ -302,9 +345,21 @@ function GoalsPage({goals,setGoals,tasks,addNotif,weekOffset}){
 
   return(<div className="page">
     <div className="sh"><div className="st">🎯 الأهداف</div><button className="btn bp bsm" onClick={()=>setShowAdd(true)}>+ هدف جديد</button></div>
-    <div className="g4" style={{marginBottom:14}}>
-      {[["🔥","active","نشطة"],["✅","done","مكتملة"],["⏸️","paused","متوقفة"]].map(([ic,s,l])=><div key={s} className="sm"><span style={{fontSize:20}}>{ic}</span><div><div style={{fontSize:19,fontWeight:900,fontFamily:"Tajawal",lineHeight:1}}>{goals.filter(g=>g.status===s).length}</div><div style={{fontSize:9,color:"var(--t2)",marginTop:2}}>أهداف {l}</div></div></div>)}
-      <div className="sm"><span style={{fontSize:20}}>📊</span><div><div style={{fontSize:19,fontWeight:900,fontFamily:"Tajawal",lineHeight:1}}>{goals.length?Math.round(goals.reduce((a,g)=>a+g.progress,0)/goals.length):0}%</div><div style={{fontSize:9,color:"var(--t2)",marginTop:2}}>متوسط التقدم</div></div></div>
+    <div className="g4" style={{marginBottom:16}}>
+      {[
+        {i:"🔥",s:"active",l:"نشطة",   c:"var(--a)"},
+        {i:"✅",s:"done",  l:"مكتملة", c:"var(--g)"},
+        {i:"⏸️",s:"paused",l:"متوقفة", c:"var(--am)"},
+      ].map(({i,s,l,c})=>(
+        <div key={s} style={{background:"var(--bg2)",border:"1px solid var(--brd)",borderRadius:13,padding:"13px 15px",display:"flex",alignItems:"center",gap:11}}>
+          <div style={{width:40,height:40,borderRadius:10,background:`rgba(${s==="active"?"124,110,240":s==="done"?"16,185,129":"245,158,11"},.15)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>{i}</div>
+          <div><div style={{fontSize:22,fontWeight:900,fontFamily:"Tajawal",color:c,lineHeight:1}}>{goals.filter(g=>g.status===s).length}</div><div style={{fontSize:10,color:"var(--t2)",marginTop:3}}>أهداف {l}</div></div>
+        </div>
+      ))}
+      <div style={{background:"var(--bg2)",border:"1px solid var(--brd)",borderRadius:13,padding:"13px 15px",display:"flex",alignItems:"center",gap:11}}>
+        <div style={{width:40,height:40,borderRadius:10,background:"rgba(59,130,246,.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>📊</div>
+        <div><div style={{fontSize:22,fontWeight:900,fontFamily:"Tajawal",color:"var(--b)",lineHeight:1}}>{goals.length?Math.round(goals.reduce((a,g)=>a+g.progress,0)/goals.length):0}%</div><div style={{fontSize:10,color:"var(--t2)",marginTop:3}}>متوسط التقدم</div></div>
+      </div>
     </div>
     {goals.length===0&&<div className="empty card"><div style={{fontSize:34,marginBottom:8}}>🎯</div><div style={{fontSize:13}}>لا أهداف بعد</div></div>}
     {goals.map(g=>{
@@ -424,10 +479,10 @@ function TasksPage({tasks,setTasks,goals,setGoals,addNotif}){
 
   return(<div className="page">
     <div className="sh"><div className="st">📋 المهام</div><button className="btn bp bsm" onClick={()=>setShowAdd(true)}>+ مهمة جديدة</button></div>
-    <div style={{display:"flex",gap:4,background:"var(--bg3)",borderRadius:9,padding:3,marginBottom:14,flexWrap:"wrap"}}>
-      {[["today","اليوم",null],["week","الأسبوع",null],["overdue","متأخرة",ovCount||null],["done","مكتملة",null],["high","عالية",null],["all","الكل",null]].map(([v,l,b])=>(
-        <div key={v} onClick={()=>setFilter(v)} style={{flex:1,minWidth:55,textAlign:"center",padding:"6px 7px",borderRadius:7,fontSize:11,fontWeight:600,cursor:"pointer",transition:"all .15s",background:filter===v?"var(--a)":"transparent",color:filter===v?"white":"var(--t2)",display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
-          {l}{b?<span style={{background:"var(--r)",color:"white",fontSize:9,padding:"1px 4px",borderRadius:18}}>{b}</span>:null}
+    <div style={{display:"flex",gap:3,background:"var(--bg3)",border:"1px solid var(--brd)",borderRadius:11,padding:4,marginBottom:16,flexWrap:"wrap"}}>
+      {[["today","📅 اليوم",null],["week","🗓️ الأسبوع",null],["overdue","⚠️ متأخرة",ovCount||null],["done","✅ مكتملة",null],["high","🔴 عالية",null],["all","🔍 الكل",null]].map(([v,l,b])=>(
+        <div key={v} onClick={()=>setFilter(v)} style={{flex:1,minWidth:60,textAlign:"center",padding:"7px 6px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",transition:"all .15s",background:filter===v?"var(--a)":"transparent",color:filter===v?"white":"var(--t2)",display:"flex",alignItems:"center",justifyContent:"center",gap:4,boxShadow:filter===v?"0 2px 8px rgba(124,110,240,.3)":"none"}}>
+          {l}{b?<span style={{background:"var(--r)",color:"white",fontSize:9,padding:"1px 5px",borderRadius:18,fontWeight:700}}>{b}</span>:null}
         </div>
       ))}
     </div>
@@ -537,7 +592,10 @@ function PomodoroPage({onSession,addNotif,goals}){
 function StatsPage({tasks,goals}){
   const today=toDay();
   const wt=tasks.filter(t=>isThisWeek(t.date,0));
-  const weeks=Array.from({length:4},(_,i)=>{const base=new Date();base.setDate(base.getDate()-(3-i)*7);const ws=getWeekStart(base);const we=getWeekEnd(ws);const wts=tasks.filter(t=>{const d=new Date(t.date+"T00:00:00");return d>=ws&&d<=we;});const wd=wts.filter(t=>t.done);return{l:`أ${4-i}`,t:wts.length,d:wd.length,p:wts.length?Math.round(wd.length/wts.length*100):0};});
+  const weeks=Array.from({length:4},(_,i)=>{const base=new Date();base.setDate(base.getDate()-(3-i)*7);const ws=getWeekStart(base);const we=getWeekEnd(ws);const wts=tasks.filter(t=>{const d=new Date(t.date+"T00:00:00");return d>=ws&&d<=we;});const wd=wts.filter(t=>t.done);
+  const wkBase=new Date();wkBase.setDate(wkBase.getDate()-(3-i)*7);
+  const wkLabel=i===3?"هذا الأسبوع":`أسبوع -${3-i}`;
+  return{l:wkLabel,t:wts.length,d:wd.length,p:wts.length?Math.round(wd.length/wts.length*100):0};});
   const maxT=Math.max(...weeks.map(w=>w.t),1);
   return(<div className="page">
     <div className="st" style={{fontSize:17,marginBottom:18}}>📊 الإحصائيات</div>
@@ -694,9 +752,9 @@ export default function App(){
     <div className="shell">
       <div className={`mob-ov ${sidebarOpen?"show":""}`} onClick={()=>setSidebarOpen(false)}/>
       <nav className={`sidebar ${sidebarOpen?"open":""}`}>
-        <div className="logo">
-          <div className="logo-i">⚡</div>
-          <div><div className="logo-n">إنجاز</div><div className="logo-s">نظام أسبوعي</div></div>
+        <div className="logo" style={{background:"linear-gradient(135deg,rgba(124,110,240,.08),transparent)"}}>
+          <div className="logo-i" style={{boxShadow:"0 4px 12px rgba(124,110,240,.4)"}}>⚡</div>
+          <div><div className="logo-n">إنجاز</div><div className="logo-s">نظام إدارة حياتك</div></div>
         </div>
         <div className="nav">
           {/* Week navigator */}
@@ -729,14 +787,18 @@ export default function App(){
       <div className="main">
         <div className="topbar">
           <div>
-            <div style={{fontSize:15,fontWeight:700,fontFamily:"Tajawal"}}>{TITLES[page]}</div>
-            <div style={{fontSize:10,color:"var(--t3)"}}>{today.toLocaleDateString("ar-EG",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
+            <div style={{fontSize:16,fontWeight:800,fontFamily:"Tajawal",color:"var(--t)"}}>{TITLES[page]}</div>
+            <div style={{fontSize:10,color:"var(--t3)",marginTop:1}}>{today.toLocaleDateString("ar-EG",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
           </div>
-          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          <div style={{display:"flex",gap:7,alignItems:"center"}}>
             <div className="ib menu-btn" onClick={()=>setSidebarOpen(!sidebarOpen)}>☰</div>
             {dbLoading&&<div className="sp" style={{width:15,height:15}}/>}
-            {todayCount>0&&<div style={{fontSize:11,padding:"3px 9px",borderRadius:20,background:"rgba(124,110,240,.15)",color:"var(--a2)",fontWeight:700}}>📋{todayCount} اليوم</div>}
-            <div className="ib" onClick={()=>addNotif({type:"info",icon:"🔔",title:"لا إشعارات جديدة"})}>🔔</div>
+            {todayCount>0&&(
+              <div style={{fontSize:11,padding:"4px 11px",borderRadius:20,background:"linear-gradient(135deg,rgba(124,110,240,.2),rgba(92,79,212,.1))",color:"var(--a2)",fontWeight:700,border:"1px solid rgba(124,110,240,.2)"}}>
+                📋 {todayCount} متبقية
+              </div>
+            )}
+            <div className="ib" style={{position:"relative"}} onClick={()=>addNotif({type:"info",icon:"🔔",title:"لا إشعارات جديدة"})}>🔔</div>
           </div>
         </div>
         {page==="week"     &&<ThisWeekPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} addNotif={addNotif} weekOffset={weekOffset}/>}
