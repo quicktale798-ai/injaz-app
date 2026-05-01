@@ -5,1440 +5,741 @@ const SUPABASE_URL = "https://gkzdepanaphjijrqepie.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdremRlcGFuYXBoamlqcnFlcGllIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjQyMzEsImV4cCI6MjA5MjgwMDIzMX0.Rsh4wgCtLSa7tQEUuvYLyFfDOSqVwzizibLA0MTORoc";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// ── Constants ────────────────────────────────────────────────
-const QUOTES = [
-  "النجاح ليس نهاية الطريق، والفشل ليس نهاية المطاف.",
-  "ابدأ من حيث أنت، استخدم ما لديك، افعل ما تستطيع.",
-  "كل يوم هو فرصة جديدة لتكون أفضل مما كنت عليه بالأمس.",
-  "الإنتاجية تعني اتخاذ الإجراءات الصحيحة في الوقت المناسب.",
-  "الوقت عملة لا تُسترجع، أنفقها بحكمة.",
-  "خطوة واحدة كل يوم تصنع الفارق بعد عام كامل.",
-  "التركيز هو الفن الأعلى للنجاح.",
-];
-
-const REPEAT_LABELS = { none:"لا تكرار", daily:"يومي", weekly:"أسبوعي", monthly:"شهري" };
-const WEEK_DAYS = [
-  {id:0,label:"أحد"},{id:1,label:"اثنين"},{id:2,label:"ثلاثاء"},
-  {id:3,label:"أربعاء"},{id:4,label:"خميس"},{id:5,label:"جمعة"},{id:6,label:"سبت"},
-];
-const COLORS = ["#6366f1","#10b981","#f59e0b","#ef4444","#3b82f6","#06b6d4","#8b5cf6","#ec4899"];
-const PRAYERS = [
-  {id:"fajr",name:"الفجر",icon:"🌙"},{id:"dhuhr",name:"الظهر",icon:"☀️"},
-  {id:"asr",name:"العصر",icon:"🌤️"},{id:"maghrib",name:"المغرب",icon:"🌅"},
-  {id:"isha",name:"العشاء",icon:"🌃"},
-];
-const WEEKLY_STATS = [
-  {day:"السبت",tasks:8,focus:3.5},{day:"الأحد",tasks:6,focus:2.8},
-  {day:"الاثنين",tasks:9,focus:4.2},{day:"الثلاثاء",tasks:7,focus:3.1},
-  {day:"الأربعاء",tasks:10,focus:5.0},{day:"الخميس",tasks:5,focus:2.5},
-  {day:"الجمعة",tasks:4,focus:1.8},
-];
-
-const EMPTY_TASK_FORM = { title:"", goalId:"", priority:"medium", date: new Date().toISOString().split("T")[0], repeat:"none", note:"", time:"", weekDays:[] };
-const EMPTY_GOAL_FORM = { title:"", category:"", startDate:"", endDate:"", color:"#6366f1", status:"active" };
-
-function getNextRepeatDate(fromDate, repeat) {
-  const d = new Date(fromDate + "T00:00:00");
-  if (repeat === "daily")   d.setDate(d.getDate() + 1);
-  else if (repeat === "weekly")  d.setDate(d.getDate() + 7);
-  else if (repeat === "monthly") d.setMonth(d.getMonth() + 1);
+// ── Week helpers (Saturday→Friday) ───────────────────────────
+function getWeekStart(date = new Date()) {
+  const d = new Date(date); const day = d.getDay();
+  d.setDate(d.getDate() - (day === 6 ? 0 : day + 1));
+  d.setHours(0,0,0,0); return d;
+}
+function getWeekEnd(ws) { const d = new Date(ws); d.setDate(d.getDate()+6); return d; }
+function getWeekNumber(date = new Date()) {
+  const s = new Date(date.getFullYear(),0,1);
+  const fs = new Date(s); fs.setDate(s.getDate()+((6-s.getDay()+7)%7));
+  return Math.max(1, Math.floor((getWeekStart(date)-fs)/(7*86400000))+1);
+}
+function isThisWeek(dateStr, offset=0) {
+  const base = new Date(); base.setDate(base.getDate()+offset*7);
+  const ws=getWeekStart(base); const we=getWeekEnd(ws);
+  const d=new Date(dateStr+"T00:00:00"); return d>=ws&&d<=we;
+}
+function fmtDate(d) { return new Date(d).toLocaleDateString("ar-EG",{day:"numeric",month:"short"}); }
+function toDay() { return new Date().toISOString().split("T")[0]; }
+function getNextRepeat(from, repeat) {
+  const d=new Date(from+"T00:00:00");
+  if(repeat==="daily") d.setDate(d.getDate()+1);
+  else if(repeat==="weekly") d.setDate(d.getDate()+7);
+  else if(repeat==="monthly") d.setMonth(d.getMonth()+1);
   return d.toISOString().split("T")[0];
 }
 
-// ── Global Styles ────────────────────────────────────────────
-const styles = `
-  @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;900&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap');
-  :root {
-    --bg:#0a0b0f; --bg2:#111218; --bg3:#1a1b24; --bg4:#22232f;
-    --border:rgba(255,255,255,0.07); --border2:rgba(255,255,255,0.12);
-    --text:#f0f0f8; --text2:#9899b0; --text3:#5a5b72;
-    --accent:#7c6ef0; --accent2:#9d8ff5; --accent3:#5c4fd4;
-    --green:#10b981; --amber:#f59e0b; --red:#ef4444; --blue:#3b82f6; --cyan:#06b6d4;
-    --card-shadow:0 2px 20px rgba(0,0,0,0.4); --glow:0 0 30px rgba(124,110,240,0.15);
-  }
-  *{margin:0;padding:0;box-sizing:border-box;}
-  body{font-family:'IBM Plex Sans Arabic','Tajawal',sans-serif;background:var(--bg);color:var(--text);direction:rtl;text-align:right;min-height:100vh;overflow-x:hidden;}
-  ::-webkit-scrollbar{width:5px;} ::-webkit-scrollbar-track{background:var(--bg2);} ::-webkit-scrollbar-thumb{background:var(--accent3);border-radius:3px;}
-  .app-shell{display:flex;min-height:100vh;}
-  .sidebar{width:260px;background:var(--bg2);border-left:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;right:0;bottom:0;z-index:100;transition:transform 0.3s ease;}
-  .sidebar-logo{padding:24px 20px 20px;border-bottom:1px solid var(--border);}
-  .logo-mark{display:flex;align-items:center;gap:12px;}
-  .logo-icon{width:40px;height:40px;background:linear-gradient(135deg,var(--accent),var(--accent3));border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 4px 15px rgba(124,110,240,0.4);}
-  .logo-text{font-family:'Tajawal',sans-serif;font-weight:900;font-size:16px;} .logo-sub{font-size:11px;color:var(--text2);margin-top:2px;}
-  .nav-section{padding:16px 12px 8px;} .nav-label{font-size:10px;color:var(--text3);letter-spacing:1px;padding:0 8px 8px;text-transform:uppercase;}
-  .nav-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;cursor:pointer;transition:all 0.2s;color:var(--text2);font-size:14px;font-weight:500;margin-bottom:2px;}
-  .nav-item:hover{background:var(--bg3);color:var(--text);}
-  .nav-item.active{background:linear-gradient(135deg,rgba(124,110,240,0.2),rgba(92,79,212,0.1));color:var(--accent2);border:1px solid rgba(124,110,240,0.2);}
-  .nav-item .icon{font-size:18px;width:24px;text-align:center;} .nav-badge{margin-right:auto;background:var(--accent);color:white;font-size:10px;padding:2px 7px;border-radius:20px;font-weight:700;}
-  .sidebar-footer{padding:16px 12px;margin-top:auto;border-top:1px solid var(--border);}
-  .user-card{display:flex;align-items:center;gap:12px;padding:10px;border-radius:12px;background:var(--bg3);cursor:pointer;}
-  .user-avatar{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--cyan));display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;}
-  .user-name{font-size:13px;font-weight:600;} .user-role{font-size:11px;color:var(--text2);}
-  .main{margin-right:260px;flex:1;min-height:100vh;display:flex;flex-direction:column;}
-  .topbar{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 28px;height:64px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;backdrop-filter:blur(10px);}
-  .topbar-title{font-family:'Tajawal',sans-serif;font-size:20px;font-weight:700;} .topbar-date{font-size:13px;color:var(--text2);}
-  .topbar-actions{display:flex;gap:8px;align-items:center;}
-  .btn-icon{width:36px;height:36px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;transition:all 0.2s;color:var(--text2);}
-  .btn-icon:hover{background:var(--bg4);color:var(--text);}
-  .page{padding:24px 28px;animation:fadeIn 0.3s ease;}
-  @keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
-  .card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:20px;transition:all 0.2s;}
-  .card:hover{border-color:var(--border2);box-shadow:var(--card-shadow);}
-  .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px;}
-  .stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:18px;position:relative;overflow:hidden;transition:all 0.3s;}
-  .stat-card:hover{transform:translateY(-2px);box-shadow:var(--glow);border-color:var(--border2);}
-  .stat-icon{font-size:26px;margin-bottom:10px;} .stat-value{font-family:'Tajawal',sans-serif;font-size:30px;font-weight:900;line-height:1;}
-  .stat-label{font-size:12px;color:var(--text2);margin-top:4px;} .stat-trend{font-size:11px;color:var(--green);margin-top:6px;}
-  .progress-bar{height:6px;background:var(--bg4);border-radius:10px;overflow:hidden;}
-  .progress-fill{height:100%;border-radius:10px;transition:width 1s ease;}
-  .task-item{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-radius:12px;background:var(--bg3);border:1px solid var(--border);margin-bottom:8px;transition:all 0.2s;}
-  .task-item:hover{border-color:var(--border2);}
-  .task-check{width:20px;height:20px;border-radius:6px;border:2px solid var(--border2);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;transition:all 0.2s;font-size:11px;color:white;}
-  .task-check.done{background:var(--green);border-color:var(--green);} .task-check.high{border-color:var(--red);} .task-check.medium{border-color:var(--amber);} .task-check.low{border-color:var(--blue);}
-  .task-title{font-size:14px;font-weight:500;flex:1;} .task-title.done{text-decoration:line-through;}
-  .task-meta{display:flex;gap:6px;align-items:center;margin-top:4px;flex-wrap:wrap;}
-  .badge{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600;}
-  .badge.high{background:rgba(239,68,68,0.15);color:var(--red);} .badge.medium{background:rgba(245,158,11,0.15);color:var(--amber);} .badge.low{background:rgba(59,130,246,0.15);color:var(--blue);} .badge.goal{background:rgba(124,110,240,0.15);color:var(--accent2);}
-  .btn{padding:10px 20px;border-radius:10px;border:none;cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;transition:all 0.2s;display:inline-flex;align-items:center;gap:8px;}
-  .btn-primary{background:var(--accent);color:white;} .btn-primary:hover{background:var(--accent2);transform:translateY(-1px);box-shadow:0 4px 15px rgba(124,110,240,0.4);}
-  .btn-ghost{background:var(--bg3);color:var(--text2);border:1px solid var(--border);} .btn-ghost:hover{background:var(--bg4);color:var(--text);}
-  .btn-sm{padding:6px 14px;font-size:12px;border-radius:8px;}
-  .btn-danger{background:rgba(239,68,68,0.15);color:var(--red);border:1px solid rgba(239,68,68,0.2);} .btn-danger:hover{background:rgba(239,68,68,0.28);}
-  .goal-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:16px;transition:all 0.3s;position:relative;overflow:hidden;}
-  .goal-card:hover{transform:translateX(-4px);box-shadow:var(--card-shadow);}
-  .goal-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;}
-  .goal-title{font-size:16px;font-weight:700;} .goal-category{font-size:11px;color:var(--text2);margin-top:3px;}
-  .goal-status{font-size:11px;padding:4px 10px;border-radius:20px;font-weight:600;}
-  .status-active{background:rgba(16,185,129,0.15);color:var(--green);} .status-paused{background:rgba(245,158,11,0.15);color:var(--amber);} .status-done{background:rgba(59,130,246,0.15);color:var(--blue);}
-  .subtask-list{margin-top:12px;} .subtask-item{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:var(--text2);border-bottom:1px solid var(--border);} .subtask-item:last-child{border-bottom:none;}
-  .pomo-circle-bg{fill:none;stroke:var(--bg4);stroke-width:8;}
-  .tabs{display:flex;gap:4px;background:var(--bg3);border-radius:12px;padding:4px;margin-bottom:20px;}
-  .tab{flex:1;padding:8px;border-radius:8px;text-align:center;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;color:var(--text2);}
-  .tab.active{background:var(--accent);color:white;box-shadow:0 2px 10px rgba(124,110,240,0.3);}
-  .section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
-  .section-title{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px;}
-  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.2s;}
-  .modal{background:var(--bg2);border:1px solid var(--border2);border-radius:20px;padding:28px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;}
-  .modal-title{font-size:18px;font-weight:700;margin-bottom:20px;display:flex;align-items:center;gap:10px;}
-  .form-group{margin-bottom:16px;} .form-label{font-size:13px;color:var(--text2);margin-bottom:6px;display:block;font-weight:500;}
-  .form-input,.form-select,.form-textarea{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-family:inherit;font-size:14px;color:var(--text);outline:none;direction:rtl;transition:border-color 0.2s;}
-  .form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(124,110,240,0.1);}
-  .form-select option{background:var(--bg3);} .form-textarea{resize:vertical;min-height:80px;}
-  .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-  .modal-actions{display:flex;gap:10px;margin-top:20px;justify-content:flex-end;}
-  .notif-stack{position:fixed;bottom:24px;left:24px;z-index:300;display:flex;flex-direction:column;gap:8px;}
-  .notif{background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:14px 18px;font-size:13px;display:flex;align-items:center;gap:12px;min-width:280px;animation:slideIn 0.3s ease;box-shadow:0 8px 30px rgba(0,0,0,0.4);}
-  .notif.success{border-color:rgba(16,185,129,0.3);} .notif.info{border-color:rgba(124,110,240,0.3);} .notif.warning{border-color:rgba(245,158,11,0.3);}
-  @keyframes slideIn{from{opacity:0;transform:translateX(-20px);}to{opacity:1;transform:translateX(0);}}
-  .empty{text-align:center;padding:40px 20px;color:var(--text3);} .empty-icon{font-size:40px;margin-bottom:12px;} .empty-text{font-size:14px;}
-  .scroll-area{max-height:420px;overflow-y:auto;padding-left:4px;}
-  .spinner{width:20px;height:20px;border:2px solid rgba(124,110,240,0.3);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite;}
-  @keyframes spin{to{transform:rotate(360deg);}}
-  .ai-chat{display:flex;flex-direction:column;gap:12px;}
-  .ai-message{display:flex;gap:12px;} .ai-message.user{flex-direction:row-reverse;}
-  .ai-avatar{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--cyan));display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
-  .ai-avatar.user{background:var(--bg3);border:1px solid var(--border);}
-  .ai-bubble{padding:12px 16px;border-radius:12px;font-size:14px;line-height:1.7;max-width:85%;}
-  .ai-bubble.bot{background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:12px 2px 12px 12px;}
-  .ai-bubble.user{background:var(--accent);color:white;border-radius:2px 12px 12px 12px;}
-  .ai-input-row{display:flex;gap:8px;margin-top:8px;}
-  .ai-input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:12px 16px;font-family:inherit;font-size:14px;color:var(--text);outline:none;direction:rtl;transition:border-color 0.2s;}
-  .ai-input:focus{border-color:var(--accent);}
-  .alert-banner{position:fixed;top:80px;left:50%;transform:translateX(-50%);z-index:500;display:flex;flex-direction:column;gap:8px;width:calc(100% - 40px);max-width:400px;}
-  .alert-card{border-radius:14px;padding:14px 18px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 30px rgba(0,0,0,0.5);backdrop-filter:blur(20px);}
-  .alert-card.now{background:linear-gradient(135deg,rgba(239,68,68,0.95),rgba(220,38,38,0.95));border:1px solid rgba(255,255,255,0.2);}
-  .alert-card.warn{background:linear-gradient(135deg,rgba(245,158,11,0.95),rgba(217,119,6,0.95));border:1px solid rgba(255,255,255,0.2);}
-  .pomo-btn{width:52px;height:52px;border-radius:50%;border:none;cursor:pointer;font-size:22px;display:flex;align-items:center;justify-content:center;transition:all 0.2s;}
-  .pomo-btn-main{background:var(--accent);color:white;width:64px;height:64px;font-size:26px;box-shadow:0 4px 20px rgba(124,110,240,0.4);}
-  .pomo-btn-main:hover{transform:scale(1.05);}
-  .pomo-btn-secondary{background:var(--bg3);color:var(--text2);border:1px solid var(--border);}
-  .pomo-dot{width:10px;height:10px;border-radius:50%;background:var(--bg4);transition:all 0.3s;}
-  .pomo-dot.done{background:var(--accent);box-shadow:0 0 8px rgba(124,110,240,0.6);}
-  .chart-bar-wrap{display:flex;align-items:flex-end;gap:8px;height:120px;}
-  .chart-bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end;}
-  .chart-bar{width:100%;border-radius:6px 6px 0 0;transition:height 1s ease;min-height:4px;cursor:pointer;}
-  .chart-bar-label{font-size:10px;color:var(--text3);} .chart-bar-value{font-size:10px;color:var(--text2);font-weight:600;}
-  .menu-btn{display:none;}
-  .mobile-overlay{display:none;}
-  /* Dashboard responsive */
-  .db-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
-  .db-layout{display:grid;grid-template-columns:1fr 320px;gap:18px;align-items:start;}
-  .db-tasks-grid{display:grid;grid-template-columns:1fr;gap:10px;}
-  .db-sidebar{display:flex;flex-direction:column;gap:14px;}
-  .db-quote-top{display:none;} .db-quote-side{display:block;}
-  @media(max-width:900px){
-    .db-layout{grid-template-columns:1fr;}
-    .db-quote-top{display:block;margin-bottom:14px;}
-    .db-quote-side{display:none;}
-  }
-  @media(max-width:768px){
-    .sidebar{transform:translateX(260px);}
-    .sidebar.open{transform:translateX(0);}
-    .main{margin-right:0;}
-    .menu-btn{display:flex!important;}
-    .mobile-overlay.show{display:block;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99;}
-    .page{padding:16px;}
-    .form-row{grid-template-columns:1fr;}
-    .topbar{padding:0 16px;}
-    .db-stats{grid-template-columns:repeat(2,1fr);}
-  }
+const COLORS=["#6366f1","#10b981","#f59e0b","#ef4444","#3b82f6","#06b6d4","#8b5cf6","#ec4899","#f97316","#14b8a6"];
+const PRAYERS=[{id:"fajr",n:"الفجر",i:"🌙"},{id:"dhuhr",n:"الظهر",i:"☀️"},{id:"asr",n:"العصر",i:"🌤️"},{id:"maghrib",n:"المغرب",i:"🌅"},{id:"isha",n:"العشاء",i:"🌃"}];
+const WD=["أحد","اثنين","ثلاثاء","أربعاء","خميس","جمعة","سبت"];
+const QUOTES=["النجاح ليس نهاية الطريق.","ابدأ من حيث أنت.","كل يوم فرصة جديدة.","الوقت عملة لا تُسترجع.","خطوة كل يوم تصنع الفارق.","التركيز هو الفن الأعلى.","اجعل كل يوم تحفة فنية."];
+const POMO_KEY="injaz-pomo-v2";
+
+// ── STYLES ───────────────────────────────────────────────────
+const S = `
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap');
+:root{--bg:#0d0e14;--bg2:#13141c;--bg3:#1c1d28;--bg4:#252636;--brd:rgba(255,255,255,0.06);--brd2:rgba(255,255,255,0.11);--t:#eeeef8;--t2:#8b8ca8;--t3:#4a4b62;--a:#7c6ef0;--a2:#9d8ff5;--a3:#5c4fd4;--g:#10b981;--am:#f59e0b;--r:#ef4444;--b:#3b82f6;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'IBM Plex Sans Arabic','Tajawal',sans-serif;background:var(--bg);color:var(--t);direction:rtl;text-align:right;min-height:100vh;}
+::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-thumb{background:var(--a3);border-radius:4px;}
+.shell{display:flex;min-height:100vh;}
+.sidebar{width:220px;background:var(--bg2);border-left:1px solid var(--brd);display:flex;flex-direction:column;position:fixed;top:0;right:0;bottom:0;z-index:100;transition:transform 0.3s;}
+.logo{padding:16px 14px;border-bottom:1px solid var(--brd);display:flex;align-items:center;gap:10px;}
+.logo-i{width:34px;height:34px;background:linear-gradient(135deg,var(--a),var(--a3));border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;}
+.logo-n{font-family:'Tajawal',sans-serif;font-weight:900;font-size:17px;}
+.logo-s{font-size:9px;color:var(--t3);}
+.nav{padding:10px 8px;flex:1;overflow-y:auto;}
+.ni{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:all .15s;color:var(--t2);font-size:12px;font-weight:500;margin-bottom:1px;}
+.ni:hover{background:var(--bg3);color:var(--t);}
+.ni.active{background:linear-gradient(135deg,rgba(124,110,240,.18),rgba(92,79,212,.08));color:var(--a2);border:1px solid rgba(124,110,240,.18);}
+.ni-ic{font-size:15px;width:18px;text-align:center;}
+.ni-b{margin-right:auto;background:var(--r);color:white;font-size:9px;padding:1px 5px;border-radius:20px;font-weight:700;}
+.wbox{background:var(--bg3);border:1px solid var(--brd);border-radius:9px;padding:9px 11px;margin:0 8px 10px;}
+.sb-bot{padding:10px 8px;border-top:1px solid var(--brd);}
+.upill{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px;background:var(--bg3);cursor:pointer;}
+.uav{width:30px;height:30px;border-radius:7px;background:linear-gradient(135deg,var(--a),#06b6d4);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;}
+.main{margin-right:220px;flex:1;display:flex;flex-direction:column;}
+.topbar{height:52px;background:var(--bg2);border-bottom:1px solid var(--brd);padding:0 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;}
+.ib{width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--brd);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;color:var(--t2);transition:all .15s;}
+.ib:hover{background:var(--bg4);color:var(--t);}
+.menu-btn{display:none;}
+.page{padding:16px 20px;animation:fu .22s ease;}
+@keyframes fu{from{opacity:0;transform:translateY(5px);}to{opacity:1;transform:translateY(0);}}
+.card{background:var(--bg2);border:1px solid var(--brd);border-radius:13px;padding:16px;}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:13px;}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.g3c{display:grid;grid-template-columns:1fr 1fr 265px;gap:12px;}
+.sm{background:var(--bg2);border:1px solid var(--brd);border-radius:11px;padding:11px 12px;display:flex;align-items:center;gap:9px;}
+.pbar{height:6px;background:var(--bg4);border-radius:10px;overflow:hidden;}
+.pf{height:100%;border-radius:10px;transition:width .8s ease;}
+.tc{background:var(--bg3);border:1px solid var(--brd);border-radius:10px;padding:10px 12px;margin-bottom:6px;transition:border-color .15s;}
+.tc:hover{border-color:var(--brd2);}
+.tc.dn{opacity:.55;}
+.tc.ov{border-color:rgba(239,68,68,.22);}
+.cb{width:18px;height:18px;border-radius:5px;border:2px solid var(--brd2);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;font-size:10px;font-weight:700;color:white;}
+.bdg{font-size:9px;padding:2px 6px;border-radius:18px;font-weight:700;}
+.gc{background:var(--bg2);border:1px solid var(--brd);border-radius:13px;overflow:hidden;margin-bottom:11px;}
+.ov-lay{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px;}
+.modal{background:var(--bg2);border:1px solid var(--brd2);border-radius:16px;padding:22px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;}
+.fl{font-size:11px;color:var(--t2);margin-bottom:4px;display:block;font-weight:600;}
+.fi,.fs,.fta{width:100%;background:var(--bg3);border:1px solid var(--brd);border-radius:8px;padding:8px 11px;font-family:inherit;font-size:13px;color:var(--t);outline:none;direction:rtl;transition:border-color .15s;}
+.fi:focus,.fs:focus,.fta:focus{border-color:var(--a);}
+.fs option{background:var(--bg3);}
+.fta{resize:vertical;min-height:60px;}
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.btn{padding:8px 15px;border-radius:8px;border:none;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;transition:all .15s;display:inline-flex;align-items:center;gap:6px;}
+.bp{background:var(--a);color:white;}.bp:hover{background:var(--a2);transform:translateY(-1px);}
+.bg{background:var(--bg3);color:var(--t2);border:1px solid var(--brd);}.bg:hover{background:var(--bg4);color:var(--t);}
+.bd{background:rgba(239,68,68,.12);color:var(--r);border:1px solid rgba(239,68,68,.2);}
+.bsm{padding:4px 10px;font-size:11px;border-radius:7px;}
+.ns{position:fixed;bottom:16px;left:16px;z-index:300;display:flex;flex-direction:column;gap:5px;}
+.ntf{background:var(--bg2);border:1px solid var(--brd2);border-radius:10px;padding:10px 14px;font-size:12px;display:flex;align-items:center;gap:9px;min-width:230px;animation:sli .2s ease;box-shadow:0 6px 20px rgba(0,0,0,.4);}
+.ntf.success{border-color:rgba(16,185,129,.3);}.ntf.info{border-color:rgba(124,110,240,.3);}.ntf.warning{border-color:rgba(245,158,11,.3);}
+@keyframes sli{from{opacity:0;transform:translateX(-12px);}to{opacity:1;transform:translateX(0);}}
+.sh{display:flex;justify-content:space-between;align-items:center;margin-bottom:11px;}
+.st{font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px;}
+.sp{width:16px;height:16px;border:2px solid rgba(124,110,240,.3);border-top-color:var(--a);border-radius:50%;animation:spin .6s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.mob-ov{display:none;}
+.pomo-btn{width:44px;height:44px;border-radius:50%;border:none;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:all .2s;}
+.pomo-main{background:var(--a);color:white;width:56px;height:56px;font-size:22px;box-shadow:0 4px 16px rgba(124,110,240,.4);}
+.pomo-main:hover{transform:scale(1.05);}
+.pomo-sec{background:var(--bg3);color:var(--t2);border:1px solid var(--brd);}
+.pdot{width:8px;height:8px;border-radius:50%;background:var(--bg4);}
+.pdot.on{background:var(--a);box-shadow:0 0 6px rgba(124,110,240,.6);}
+.ai-in{width:100%;background:var(--bg3);border:1px solid var(--brd);border-radius:9px;padding:9px 12px;font-family:inherit;font-size:13px;color:var(--t);outline:none;direction:rtl;}
+.ai-in:focus{border-color:var(--a);}
+.pr{display:flex;gap:5px;}
+.pb2{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 2px;border-radius:9px;cursor:pointer;transition:all .2s;background:var(--bg3);border:1px solid var(--brd);}
+.pb2.pd{background:rgba(124,110,240,.22);border-color:rgba(124,110,240,.4);transform:translateY(-2px);}
+.empty{text-align:center;padding:28px 14px;color:var(--t3);}
+@media(max-width:960px){.g3c{grid-template-columns:1fr 1fr;}.g3c>*:last-child{grid-column:span 2;}}
+@media(max-width:768px){
+  .sidebar{transform:translateX(220px);}.sidebar.open{transform:translateX(0);}
+  .main{margin-right:0;}.menu-btn{display:flex!important;}
+  .g4{grid-template-columns:repeat(2,1fr);}.g2{grid-template-columns:1fr;}.g3c{grid-template-columns:1fr;}
+  .g3c>*:last-child{grid-column:span 1;}.page{padding:13px;}.topbar{padding:0 12px;}
+  .mob-ov.show{display:block;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;}
+  .fr{grid-template-columns:1fr;}
+}
 `;
 
-// ── Small shared components ──────────────────────────────────
-function ProgressBar({ pct, color = "var(--accent)", h = 6 }) {
-  return (
-    <div className="progress-bar" style={{ height: h }}>
-      <div className="progress-fill" style={{ width: `${Math.min(100, pct)}%`, background: color, height: h }} />
-    </div>
-  );
-}
+// ── SHARED ───────────────────────────────────────────────────
+function PBar({pct,color="var(--a)",h=6}){return <div className="pbar" style={{height:h}}><div className="pf" style={{width:`${Math.min(100,Math.max(0,pct))}%`,background:color}}/></div>;}
+function Notifs({notifs}){return <div className="ns">{notifs.map(n=><div key={n.id} className={`ntf ${n.type}`}><span style={{fontSize:17}}>{n.icon}</span><div><div style={{fontWeight:600}}>{n.title}</div>{n.msg&&<div style={{fontSize:11,color:"var(--t2)",marginTop:1}}>{n.msg}</div>}</div></div>)}</div>;}
+function Modal({open,onClose,title,icon,children}){if(!open)return null;return <div className="ov-lay" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal"><div style={{fontSize:16,fontWeight:700,marginBottom:16,display:"flex",alignItems:"center",gap:7}}>{icon&&<span>{icon}</span>}{title}</div>{children}</div></div>;}
+function Confirm({open,onClose,onOk,title,msg}){if(!open)return null;return <div className="ov-lay" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal" style={{maxWidth:340}}><div style={{textAlign:"center",padding:"4px 0 16px"}}><div style={{fontSize:38,marginBottom:9}}>🗑️</div><div style={{fontSize:15,fontWeight:700,marginBottom:5}}>{title}</div><div style={{fontSize:12,color:"var(--t2)",lineHeight:1.7}}>{msg}</div></div><div style={{display:"flex",gap:7,justifyContent:"center"}}><button className="btn bg" onClick={onClose}>إلغاء</button><button className="btn bd" onClick={onOk}>نعم، احذف</button></div></div></div>;}
 
-function Notification({ notifs }) {
-  return (
-    <div className="notif-stack">
-      {notifs.map(n => (
-        <div key={n.id} className={`notif ${n.type}`}>
-          <span style={{ fontSize: 20 }}>{n.icon}</span>
-          <div>
-            <div style={{ fontWeight: 600 }}>{n.title}</div>
-            {n.msg && <div style={{ fontSize: 12, color: "var(--text2)", marginTop: 2 }}>{n.msg}</div>}
+function PrayerTracker(){
+  const today=toDay(); const key=`prayers-${today}`;
+  const [chk,setChk]=useState(()=>{try{return JSON.parse(localStorage.getItem(key))||[];}catch{return [];}});
+  useEffect(()=>{const l=localStorage.getItem("pl");if(l!==today){localStorage.setItem("pl",today);localStorage.removeItem(key);setChk([]);}},[]);
+  function toggle(id){setChk(p=>{const n=p.includes(id)?p.filter(x=>x!==id):[...p,id];localStorage.setItem(key,JSON.stringify(n));return n;});}
+  const all=chk.length===5;
+  return(
+    <div style={{background:"linear-gradient(135deg,rgba(124,110,240,.1),rgba(6,182,212,.04))",border:"1px solid rgba(124,110,240,.18)",borderRadius:13,padding:"12px 13px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <span style={{fontSize:13,fontWeight:700}}>🕌 الصلوات الخمس</span>
+        <span style={{fontSize:10,color:all?"var(--g)":"var(--t3)",fontWeight:700}}>{chk.length}/5{all?" ✅":""}</span>
+      </div>
+      <div className="pr">
+        {PRAYERS.map(p=>{const done=chk.includes(p.id);return(
+          <div key={p.id} className={`pb2 ${done?"pd":""}`} onClick={()=>toggle(p.id)}>
+            <span style={{fontSize:18}}>{done?"✅":p.i}</span>
+            <span style={{fontSize:8,fontWeight:700,color:done?"var(--a2)":"var(--t3)"}}>{p.n}</span>
           </div>
-        </div>
-      ))}
+        );})}
+      </div>
+      {all&&<div style={{textAlign:"center",marginTop:8,fontSize:10,color:"var(--g)",fontWeight:700}}>🌟 أكملت صلواتك اليوم!</div>}
     </div>
   );
 }
+// ── THIS WEEK PAGE ───────────────────────────────────────────
+function ThisWeekPage({tasks,setTasks,goals,setGoals,addNotif,weekOffset}){
+  const base=new Date();base.setDate(base.getDate()+weekOffset*7);
+  const ws=getWeekStart(base);const we=getWeekEnd(ws);
+  const today=toDay();
+  const wTasks=tasks.filter(t=>{const d=new Date(t.date+"T00:00:00");return d>=ws&&d<=we;});
+  const wDone=wTasks.filter(t=>t.done);
+  const tTasks=tasks.filter(t=>t.date===today);
+  const tDone=tTasks.filter(t=>t.done);
+  const wPct=wTasks.length?Math.round(wDone.length/wTasks.length*100):0;
+  const tPct=tTasks.length?Math.round(tDone.length/tTasks.length*100):0;
+  const days=Array.from({length:7},(_,i)=>{const d=new Date(ws);d.setDate(ws.getDate()+i);const s=d.toISOString().split("T")[0];const dt=tasks.filter(t=>t.date===s);return{d,s,dt,done:dt.filter(t=>t.done).length,isTod:s===today};});
+  const gProg=goals.filter(g=>g.status==="active").map(g=>{const gt=wTasks.filter(t=>String(t.goalId||t.goal_id)===String(g.id));const gd=gt.filter(t=>t.done);return{...g,wt:gt.length,wd:gd.length,wp:gt.length?Math.round(gd.length/gt.length*100):0};});
+  const quote=QUOTES[new Date().getDay()%QUOTES.length];
 
-function Modal({ open, onClose, title, icon, children }) {
-  if (!open) return null;
-  return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-title">{icon && <span>{icon}</span>}{title}</div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function ConfirmDialog({ open, onClose, onConfirm, title, msg }) {
-  if (!open) return null;
-  return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 380 }}>
-        <div style={{ textAlign: "center", padding: "8px 0 20px" }}>
-          <div style={{ fontSize: 44, marginBottom: 12 }}>🗑️</div>
-          <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8 }}>{title}</div>
-          <div style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.7 }}>{msg}</div>
-        </div>
-        <div className="modal-actions" style={{ justifyContent: "center" }}>
-          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
-          <button className="btn btn-danger" onClick={onConfirm}>نعم، احذف</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Prayer Tracker ───────────────────────────────────────────
-function PrayerTracker() {
-  const today = new Date().toISOString().split("T")[0];
-  const key = `prayers-${today}`;
-  const [checked, setChecked] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(key)) || []; } catch { return []; }
-  });
-  useEffect(() => {
-    const last = localStorage.getItem("prayer-last-day");
-    if (last !== today) { localStorage.setItem("prayer-last-day", today); localStorage.removeItem(key); setChecked([]); }
-  }, []);
-  function toggle(id) {
-    setChecked(prev => {
-      const next = prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id];
-      localStorage.setItem(key, JSON.stringify(next));
-      return next;
-    });
-  }
-  const allDone = checked.length === 5;
-  return (
-    <div style={{ background:"linear-gradient(135deg,rgba(124,110,240,0.1),rgba(6,182,212,0.05))", border:"1px solid rgba(124,110,240,0.2)", borderRadius:16, padding:"14px 16px" }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-        <span style={{ fontSize:14, fontWeight:700, display:"flex", alignItems:"center", gap:8 }}>🕌 الصلوات الخمس</span>
-        <span style={{ fontSize:11, fontWeight:700, color: allDone ? "var(--green)" : "var(--text2)" }}>{checked.length}/5 {allDone ? "✅" : ""}</span>
-      </div>
-      <div style={{ display:"flex", gap:6 }}>
-        {PRAYERS.map(p => {
-          const done = checked.includes(p.id);
-          return (
-            <div key={p.id} onClick={() => toggle(p.id)} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:5, padding:"10px 2px", borderRadius:12, cursor:"pointer", transition:"all 0.25s", background: done ? "rgba(124,110,240,0.25)" : "var(--bg3)", border:`1px solid ${done ? "rgba(124,110,240,0.45)" : "var(--border)"}`, transform: done ? "translateY(-3px)" : "none", boxShadow: done ? "0 6px 16px rgba(124,110,240,0.2)" : "none" }}>
-              <span style={{ fontSize:20 }}>{done ? "✅" : p.icon}</span>
-              <span style={{ fontSize:9, fontWeight:700, color: done ? "var(--accent2)" : "var(--text3)" }}>{p.name}</span>
-            </div>
-          );
-        })}
-      </div>
-      {allDone && <div style={{ textAlign:"center", marginTop:10, fontSize:11, color:"var(--green)", fontWeight:700 }}>🌟 ماشاء الله — أكملت صلواتك اليوم!</div>}
-    </div>
-  );
-}
-
-// ── Dashboard ────────────────────────────────────────────────
-function DashboardPage({ tasks, setTasks, goals, pomodoroSessions, todayFocus, addNotif }) {
-  const today = new Date().toISOString().split("T")[0];
-  const todayTasks  = tasks.filter(t => t.date === today);
-  const doneTasks   = todayTasks.filter(t => t.done);
-  const pct         = todayTasks.length ? Math.round(doneTasks.length / todayTasks.length * 100) : 0;
-  const quote       = QUOTES[new Date().getDay() % QUOTES.length];
-  const activeGoals = goals.filter(g => g.status === "active");
-
-  const sortedTasks = [...todayTasks].sort((a, b) => {
-    if (a.done !== b.done) return a.done ? 1 : -1;
-    return ({"high":0,"medium":1,"low":2}[a.priority]??1) - ({"high":0,"medium":1,"low":2}[b.priority]??1);
-  });
-
-  async function toggleTask(id) {
-    const task = tasks.find(t => t.id === id);
-    if (!task) return;
-    const done = !task.done;
-    const now  = new Date();
-    const completedAt = done ? `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}` : null;
-    await supabase.from("tasks").update({ done, completed_at: completedAt }).eq("id", id);
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, done, completedAt } : t));
-    if (done) addNotif({ type:"success", icon:"🎉", title:"أحسنت!", msg: task.title });
+  async function toggle(id){
+    const task=tasks.find(t=>t.id===id);if(!task)return;
+    const done=!task.done;const now=new Date();
+    const ca=done?`${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}`:null;
+    await supabase.from("tasks").update({done,completed_at:ca}).eq("id",id);
+    setTasks(prev=>prev.map(t=>t.id===id?{...t,done,completedAt:ca}:t));
+    if(done){
+      addNotif({type:"success",icon:"🎉",title:"أحسنت!",msg:task.title});
+      if(task.repeat&&task.repeat!=="none"){
+        const uid=(await supabase.auth.getUser()).data.user?.id;
+        const nd=getNextRepeat(today,task.repeat);
+        const{data:ex}=await supabase.from("tasks").select("id").eq("user_id",uid).eq("title",task.title).eq("date",nd).eq("done",false).limit(1);
+        if(!ex||!ex.length){const{data:nx}=await supabase.from("tasks").insert({user_id:uid,title:task.title,priority:task.priority,date:nd,done:false,completed_at:null,repeat:task.repeat,goal_id:task.goalId||task.goal_id||null,time:task.time||null,week_days:task.weekDays||null,note:task.note||null}).select().single();if(nx)setTasks(prev=>[...prev,{...nx,completedAt:null,goalId:nx.goal_id,weekDays:nx.week_days}]);}
+      }
+    }
   }
 
-  const QuoteCard = () => (
-    <div style={{ background:"linear-gradient(135deg,rgba(124,110,240,0.12),rgba(92,79,212,0.06))", border:"1px solid rgba(124,110,240,0.2)", borderRadius:16, padding:"16px 20px", position:"relative", overflow:"hidden" }}>
-      <div style={{ position:"absolute", top:-10, right:10, fontSize:80, color:"var(--accent)", opacity:0.07, lineHeight:1, fontFamily:"serif", pointerEvents:"none" }}>"</div>
-      <div style={{ fontSize:13, lineHeight:1.9, color:"var(--text)", fontWeight:500, position:"relative" }}>{quote}</div>
-      <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:12 }}>
-        <div style={{ flex:1, height:1, background:"rgba(124,110,240,0.2)" }}/>
-        <span style={{ fontSize:10, color:"var(--accent2)", fontWeight:700 }}>✨ اقتباس اليوم</span>
-        <div style={{ flex:1, height:1, background:"rgba(124,110,240,0.2)" }}/>
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="page" style={{ padding:"18px 20px" }}>
-
-      {/* Quote — mobile top */}
-      <div className="db-quote-top" style={{ marginBottom:14 }}><QuoteCard /></div>
-
-      {/* Stats */}
-      <div className="db-stats">
-        {[
-          { icon:"✅", val:doneTasks.length,                     label:"مكتملة",  sub:`${todayTasks.length} إجمالاً`, color:"var(--accent)" },
-          { icon:"⏳", val:todayTasks.filter(t=>!t.done).length, label:"متبقية",  sub:"اليوم",                        color:"var(--amber)"  },
-          { icon:"🎯", val:todayFocus.toFixed(1)+"س",            label:"تركيز",   sub:`${pomodoroSessions} جلسة`,      color:"var(--green)"  },
-          { icon:"📈", val:pct+"%",                              label:"الإنجاز", sub:pct>=70?"🔥 رائع":"💪 استمر",   color:pct>=70?"var(--green)":"var(--amber)" },
-        ].map((s,i) => (
-          <div key={i} style={{ background:"var(--bg2)", border:"1px solid var(--border)", borderRadius:14, padding:"12px 14px", display:"flex", alignItems:"center", gap:12 }}>
-            <span style={{ fontSize:24 }}>{s.icon}</span>
-            <div>
-              <div style={{ fontSize:20, fontWeight:900, fontFamily:"Tajawal,sans-serif", color:s.color, lineHeight:1 }}>{s.val}</div>
-              <div style={{ fontSize:10, color:"var(--text2)", marginTop:2 }}>{s.label}</div>
-              <div style={{ fontSize:9, color:s.color }}>{s.sub}</div>
-            </div>
-          </div>
+  return(
+    <div className="page">
+      <div className="g4">
+        {[{i:"✅",v:wDone.length,l:"مكتملة الأسبوع",s:`${wTasks.length} إجمالاً`,c:"var(--a)"},{i:"📅",v:`${tDone.length}/${tTasks.length}`,l:"إنجاز اليوم",s:tPct+"%",c:"var(--g)"},{i:"📈",v:wPct+"%",l:"نسبة الأسبوع",s:wPct>=70?"🔥 رائع":"💪 استمر",c:wPct>=70?"var(--g)":"var(--am)"},{i:"🎯",v:gProg.length,l:"أهداف نشطة",s:"هذا الأسبوع",c:"var(--b)"}].map((s,i)=>(
+          <div key={i} className="sm"><span style={{fontSize:22}}>{s.i}</span><div><div style={{fontSize:19,fontWeight:900,fontFamily:"Tajawal",color:s.c,lineHeight:1}}>{s.v}</div><div style={{fontSize:9,color:"var(--t2)",marginTop:2}}>{s.l}</div></div></div>
         ))}
       </div>
-
-      {/* 2-col layout */}
-      <div className="db-layout">
-
-        {/* LEFT: Tasks */}
-        <div style={{ background:"var(--bg2)", border:"1px solid var(--border)", borderRadius:16, overflow:"hidden" }}>
-          <div style={{ padding:"14px 20px 12px", borderBottom:"1px solid var(--border)", display:"flex", justifyContent:"space-between", alignItems:"center", background:"linear-gradient(135deg,rgba(124,110,240,0.04),transparent)" }}>
-            <div>
-              <div style={{ fontSize:15, fontWeight:700 }}>📋 مهام اليوم</div>
-              <div style={{ fontSize:10, color:"var(--text3)", marginTop:2 }}>{new Date().toLocaleDateString("ar-EG",{weekday:"long",day:"numeric",month:"long"})}</div>
-            </div>
-            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              <span style={{ fontSize:12, color:"var(--text2)" }}>{doneTasks.length}/{todayTasks.length} مكتملة</span>
-              <div style={{ position:"relative", width:44, height:44 }}>
-                <svg width="44" height="44" viewBox="0 0 44 44">
-                  <circle cx="22" cy="22" r="16" fill="none" stroke="var(--bg4)" strokeWidth="5"/>
-                  <circle cx="22" cy="22" r="16" fill="none" stroke="var(--accent)" strokeWidth="5" strokeLinecap="round"
-                    strokeDasharray={100.5} strokeDashoffset={100.5-(100.5*pct/100)}
-                    style={{ transform:"rotate(-90deg)", transformOrigin:"22px 22px", transition:"stroke-dashoffset 1s ease" }}/>
-                </svg>
-                <div style={{ position:"absolute", top:"50%", left:"50%", transform:"translate(-50%,-50%)", fontSize:9, fontWeight:900, color:"var(--accent)", fontFamily:"Tajawal,sans-serif" }}>{pct}%</div>
+      <div className="g3c">
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div className="card">
+            <div className="sh">
+              <div className="st">📋 مهام اليوم <span style={{fontSize:10,color:"var(--t3)",background:"var(--bg3)",padding:"2px 7px",borderRadius:20}}>{tDone.length}/{tTasks.length}</span></div>
+              <div style={{position:"relative",width:38,height:38}}>
+                <svg width="38" height="38" viewBox="0 0 38 38"><circle cx="19" cy="19" r="14" fill="none" stroke="var(--bg4)" strokeWidth="4"/><circle cx="19" cy="19" r="14" fill="none" stroke="var(--a)" strokeWidth="4" strokeLinecap="round" strokeDasharray={88} strokeDashoffset={88-(88*tPct/100)} style={{transform:"rotate(-90deg)",transformOrigin:"19px 19px",transition:"stroke-dashoffset .8s"}}/></svg>
+                <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",fontSize:8,fontWeight:900,color:"var(--a)",fontFamily:"Tajawal"}}>{tPct}%</div>
               </div>
             </div>
-          </div>
-          <div style={{ padding:"12px 14px 16px" }}>
-            {sortedTasks.length === 0 ? (
-              <div style={{ textAlign:"center", padding:"40px 0", color:"var(--text3)" }}>
-                <div style={{ fontSize:36, marginBottom:8 }}>🌟</div>
-                <div style={{ fontSize:13 }}>لا مهام اليوم — أضف مهمتك الأولى!</div>
-              </div>
-            ) : (
-              <div className="db-tasks-grid">
-                {sortedTasks.map(t => {
-                  const linkedGoal = goals.find(g => String(g.id) === String(t.goalId || t.goal_id));
-                  const isOverdue  = !t.done && t.time && new Date(`${today}T${t.time}:00`) < new Date();
-                  const pc = t.priority==="high" ? "var(--red)" : t.priority==="medium" ? "var(--amber)" : "var(--blue)";
-                  return (
-                    <div key={t.id} style={{ background:t.done?"rgba(16,185,129,0.04)":"var(--bg3)", border:`1px solid ${t.done?"rgba(16,185,129,0.14)":isOverdue?"rgba(239,68,68,0.28)":"var(--border)"}`, borderRadius:12, padding:"11px 13px", borderRight:`3px solid ${pc}`, opacity:t.done?0.65:1, transition:"all 0.2s" }}>
-                      <div style={{ display:"flex", alignItems:"flex-start", gap:9 }}>
-                        <div onClick={() => toggleTask(t.id)} style={{ width:20, height:20, borderRadius:6, flexShrink:0, marginTop:2, cursor:"pointer", border:`2px solid ${t.done?"var(--green)":pc}`, background:t.done?"var(--green)":"transparent", display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontSize:11, fontWeight:700, transition:"all 0.2s" }}>{t.done?"✓":""}</div>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ display:"flex", justifyContent:"space-between", gap:6, marginBottom:5 }}>
-                            <div onClick={() => toggleTask(t.id)} style={{ fontSize:13, fontWeight:600, cursor:"pointer", flex:1, textDecoration:t.done?"line-through":"none", color:t.done?"var(--text3)":"var(--text)" }}>{t.title}</div>
-                            {t.time && <span style={{ fontSize:10, padding:"2px 7px", borderRadius:20, flexShrink:0, fontWeight:700, background:isOverdue&&!t.done?"rgba(239,68,68,0.14)":"rgba(245,158,11,0.12)", color:isOverdue&&!t.done?"var(--red)":"var(--amber)" }}>⏰{t.time}{isOverdue&&!t.done?" ⚠️":""}</span>}
-                          </div>
-                          <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
-                            <span style={{ fontSize:9, padding:"2px 7px", borderRadius:20, fontWeight:600, background:t.priority==="high"?"rgba(239,68,68,0.1)":t.priority==="medium"?"rgba(245,158,11,0.1)":"rgba(59,130,246,0.1)", color:pc }}>{t.priority==="high"?"🔴 عالية":t.priority==="medium"?"🟡 متوسطة":"🔵 منخفضة"}</span>
-                            {linkedGoal && <span style={{ fontSize:9, padding:"2px 7px", borderRadius:20, fontWeight:600, background:`${linkedGoal.color}18`, color:linkedGoal.color }}>🎯 {linkedGoal.title}</span>}
-                            {t.repeat&&t.repeat!=="none"&&<span style={{ fontSize:9, padding:"2px 7px", borderRadius:20, fontWeight:600, background:"rgba(124,110,240,0.1)", color:"var(--accent2)" }}>{t.repeat==="daily"?"🔁 يومي":t.repeat==="weekly"?"📆 أسبوعي":"🗓️ شهري"}</span>}
-                            {t.done&&t.completedAt&&<span style={{ fontSize:9, padding:"2px 7px", borderRadius:20, fontWeight:600, background:"rgba(16,185,129,0.1)", color:"var(--green)" }}>✅ {t.completedAt}</span>}
-                          </div>
-                          {t.note && <div style={{ marginTop:6, padding:"5px 8px", background:"var(--bg4)", borderRadius:7, borderRight:"2px solid var(--accent3)", fontSize:11, color:"var(--text2)" }}>📝 {t.note}</div>}
-                        </div>
+            {tTasks.length===0?<div className="empty"><div style={{fontSize:32,marginBottom:7}}>🌟</div><div style={{fontSize:12}}>لا مهام اليوم</div></div>
+            :[...tTasks].sort((a,b)=>a.done?1:-1).map(t=>{
+              const g=goals.find(x=>String(x.id)===String(t.goalId||t.goal_id));
+              const pc=t.priority==="high"?"var(--r)":t.priority==="medium"?"var(--am)":"var(--b)";
+              return(
+                <div key={t.id} className={`tc ${t.done?"dn":""}`} style={{borderRight:`3px solid ${pc}`}}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:9}}>
+                    <div className="cb" onClick={()=>toggle(t.id)} style={{borderColor:t.done?"var(--g)":pc,background:t.done?"var(--g)":"transparent"}}>{t.done?"✓":""}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:600,textDecoration:t.done?"line-through":"none",color:t.done?"var(--t3)":"var(--t)",marginBottom:4}}>{t.title}</div>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                        {g&&<span className="bdg" style={{background:`${g.color}18`,color:g.color}}>🎯{g.title}</span>}
+                        {t.time&&<span className="bdg" style={{background:"rgba(245,158,11,.1)",color:"var(--am)"}}>⏰{t.time}</span>}
+                        {t.done&&t.completedAt&&<span className="bdg" style={{background:"rgba(16,185,129,.1)",color:"var(--g)"}}>✅{t.completedAt}</span>}
+                        {t.note&&<span className="bdg" style={{background:"var(--bg4)",color:"var(--t3)"}}>📝</span>}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* RIGHT: Sidebar */}
-        <div className="db-sidebar">
-          <PrayerTracker />
-
-          {/* Goals compact */}
-          <div style={{ background:"var(--bg2)", border:"1px solid var(--border)", borderRadius:16, padding:"14px 16px" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-              <div>
-                <div style={{ fontSize:14, fontWeight:700 }}>🎯 إنجاز الأهداف</div>
-                <div style={{ fontSize:9, color:"var(--text3)", marginTop:2 }}>النسبة اليومية — تتصفر كل يوم</div>
-              </div>
-              <div style={{ width:34, height:34, borderRadius:"50%", background:"var(--bg3)", border:"1px solid var(--border)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>🎯</div>
-            </div>
-            {activeGoals.length === 0 ? (
-              <div style={{ textAlign:"center", padding:"12px 0", color:"var(--text3)", fontSize:12 }}>لا أهداف نشطة</div>
-            ) : activeGoals.map(g => {
-              const gTasks = tasks.filter(t => String(t.goalId||t.goal_id) === String(g.id) && t.date === today);
-              const gDone  = gTasks.filter(t => t.done);
-              const dp     = gTasks.length ? Math.round(gDone.length / gTasks.length * 100) : 0;
-              return (
-                <div key={g.id} style={{ marginBottom:14 }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-                      <div style={{ width:8, height:8, borderRadius:"50%", background:g.color, boxShadow:`0 0 5px ${g.color}80`, flexShrink:0 }}/>
-                      <span style={{ fontSize:12, fontWeight:600 }}>{g.title}</span>
-                    </div>
-                    <div style={{ display:"flex", alignItems:"center", gap:5, flexShrink:0 }}>
-                      <span style={{ fontSize:13, color:g.color, fontWeight:900, fontFamily:"Tajawal,sans-serif" }}>{dp}%</span>
-                      <span style={{ fontSize:9, color:"var(--text3)" }}>/{g.progress}%</span>
-                    </div>
                   </div>
-                  <ProgressBar pct={dp} color={g.color} h={7}/>
-                  <div style={{ fontSize:9, color:"var(--text3)", marginTop:4 }}>{gTasks.length===0?"💡 لا مهام مرتبطة اليوم":`${gDone.length}/${gTasks.length} مهمة اليوم`}</div>
                 </div>
               );
             })}
           </div>
-
-          {/* Quote — desktop only */}
-          <div className="db-quote-side"><QuoteCard /></div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Goals Page ───────────────────────────────────────────────
-function GoalForm({ form, setForm }) {
-  return (
-    <>
-      <div className="form-group">
-        <label className="form-label">عنوان الهدف *</label>
-        <input className="form-input" placeholder="مثال: تعلم لغة جديدة" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} />
-      </div>
-      <div className="form-row">
-        <div className="form-group">
-          <label className="form-label">الفئة</label>
-          <input className="form-input" placeholder="تعليم، صحة، مال..." value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} />
-        </div>
-        <div className="form-group">
-          <label className="form-label">الحالة</label>
-          <select className="form-select" value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}>
-            <option value="active">نشط</option><option value="paused">متوقف</option><option value="done">مكتمل</option>
-          </select>
-        </div>
-      </div>
-      <div className="form-row">
-        <div className="form-group">
-          <label className="form-label">تاريخ البداية</label>
-          <input type="date" className="form-input" value={form.startDate} onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))} />
-        </div>
-        <div className="form-group">
-          <label className="form-label">تاريخ النهاية</label>
-          <input type="date" className="form-input" value={form.endDate} onChange={e => setForm(p => ({ ...p, endDate: e.target.value }))} />
-        </div>
-      </div>
-      <div className="form-group">
-        <label className="form-label">اللون</label>
-        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-          {COLORS.map(c => <div key={c} onClick={() => setForm(p => ({ ...p, color: c }))} style={{ width:28, height:28, borderRadius:8, background:c, cursor:"pointer", border: form.color===c ? "3px solid white" : "2px solid transparent", boxSizing:"border-box", transition:"all 0.2s" }} />)}
-        </div>
-      </div>
-    </>
-  );
-}
-
-function GoalsPage({ goals, setGoals, addNotif }) {
-  const [showAdd, setShowAdd]     = useState(false);
-  const [editGoal, setEditGoal]   = useState(null);
-  const [deleteGoal, setDeleteGoal] = useState(null);
-  const [addForm, setAddForm]     = useState(EMPTY_GOAL_FORM);
-  const [editForm, setEditForm]   = useState(EMPTY_GOAL_FORM);
-  const [expandedGoal, setExpandedGoal] = useState(null);
-  const [newSubtask, setNewSubtask] = useState("");
-
-  async function addGoal() {
-    if (!addForm.title.trim()) return;
-    const uid = (await supabase.auth.getUser()).data.user?.id;
-    const { data } = await supabase.from("goals").insert({ user_id:uid, title:addForm.title, category:addForm.category||"", progress:0, status:addForm.status||"active", color:addForm.color||"#6366f1", start_date:addForm.startDate||"", end_date:addForm.endDate||"", subtasks:[] }).select().single();
-    if (data) { setGoals(prev => [...prev, { ...data, subtasks:[] }]); addNotif({ type:"success", icon:"🎯", title:"تم إنشاء الهدف", msg:data.title }); }
-    setShowAdd(false); setAddForm(EMPTY_GOAL_FORM);
-  }
-
-  function openEdit(g) { setEditForm({ title:g.title, category:g.category||"", startDate:g.start_date||g.startDate||"", endDate:g.end_date||g.endDate||"", color:g.color, status:g.status }); setEditGoal(g); }
-
-  async function saveEdit() {
-    if (!editForm.title.trim()) return;
-    await supabase.from("goals").update({ title:editForm.title, category:editForm.category, status:editForm.status, color:editForm.color, start_date:editForm.startDate, end_date:editForm.endDate }).eq("id", editGoal.id);
-    setGoals(prev => prev.map(g => g.id===editGoal.id ? { ...g, ...editForm, start_date:editForm.startDate, end_date:editForm.endDate } : g));
-    addNotif({ type:"info", icon:"✏️", title:"تم تعديل الهدف", msg:editForm.title }); setEditGoal(null);
-  }
-
-  async function doDelete() {
-    await supabase.from("goals").delete().eq("id", deleteGoal.id);
-    setGoals(prev => prev.filter(g => g.id !== deleteGoal.id));
-    addNotif({ type:"warning", icon:"🗑️", title:"تم حذف الهدف", msg:deleteGoal.title });
-    setDeleteGoal(null); if (expandedGoal === deleteGoal.id) setExpandedGoal(null);
-  }
-
-  async function addSubtask(goalId) {
-    if (!newSubtask.trim()) return;
-    const goal = goals.find(g => g.id === goalId); if (!goal) return;
-    const updated = [...(goal.subtasks||[]), { id:Date.now(), title:newSubtask, done:false }];
-    await supabase.from("goals").update({ subtasks:updated }).eq("id", goalId);
-    setGoals(prev => prev.map(g => g.id===goalId ? { ...g, subtasks:updated } : g)); setNewSubtask("");
-  }
-
-  async function deleteSubtask(goalId, subId) {
-    const goal = goals.find(g => g.id===goalId); if (!goal) return;
-    const updated = goal.subtasks.filter(s => s.id!==subId);
-    const progress = updated.length ? Math.round(updated.filter(s=>s.done).length/updated.length*100) : goal.progress;
-    await supabase.from("goals").update({ subtasks:updated, progress }).eq("id", goalId);
-    setGoals(prev => prev.map(g => g.id===goalId ? { ...g, subtasks:updated, progress } : g));
-  }
-
-  async function toggleSubtask(goalId, subId) {
-    const goal = goals.find(g => g.id===goalId); if (!goal) return;
-    const updated = goal.subtasks.map(s => s.id===subId ? { ...s, done:!s.done } : s);
-    const progress = updated.length ? Math.round(updated.filter(s=>s.done).length/updated.length*100) : goal.progress;
-    await supabase.from("goals").update({ subtasks:updated, progress }).eq("id", goalId);
-    setGoals(prev => prev.map(g => g.id===goalId ? { ...g, subtasks:updated, progress } : g));
-  }
-
-  return (
-    <div className="page">
-      <div className="section-header">
-        <div className="section-title"><span>🎯</span>إدارة الأهداف</div>
-        <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ هدف جديد</button>
-      </div>
-      <div className="stats-grid">
-        {[["🔥","active","أهداف نشطة"],["✅","done","أهداف مكتملة"],["⏸️","paused","أهداف متوقفة"]].map(([icon,s,label])=>(
-          <div key={s} className="stat-card" style={{ padding:16 }}>
-            <div style={{ fontSize:22, marginBottom:8 }}>{icon}</div>
-            <div className="stat-value" style={{ fontSize:28 }}>{goals.filter(g=>g.status===s).length}</div>
-            <div className="stat-label">{label}</div>
-          </div>
-        ))}
-      </div>
-      {goals.length===0 && <div className="card empty"><div className="empty-icon">🎯</div><div className="empty-text">لا توجد أهداف بعد.</div></div>}
-      {goals.map(g => (
-        <div key={g.id} className="goal-card" style={{ borderRight:`4px solid ${g.color}` }}>
-          <div className="goal-header">
-            <div style={{ flex:1, minWidth:0 }}>
-              <div className="goal-title">{g.title}</div>
-              <div className="goal-category">📂 {g.category||"عام"}</div>
-            </div>
-            <div style={{ display:"flex", gap:6, alignItems:"center", flexShrink:0 }}>
-              <span className={`goal-status status-${g.status==="active"?"active":g.status==="done"?"done":"paused"}`}>{g.status==="active"?"🟢 نشط":g.status==="done"?"✅ مكتمل":"⏸️ متوقف"}</span>
-              <button className="btn-icon" style={{ fontSize:14 }} onClick={() => openEdit(g)}>✏️</button>
-              <button className="btn-icon" style={{ fontSize:14, color:"var(--red)" }} onClick={() => setDeleteGoal(g)}>🗑️</button>
-              <button className="btn-icon" style={{ fontSize:14 }} onClick={() => setExpandedGoal(expandedGoal===g.id?null:g.id)}>{expandedGoal===g.id?"▲":"▼"}</button>
-            </div>
-          </div>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-            <span style={{ fontSize:13, color:"var(--text2)" }}>التقدم: <strong style={{ color:g.color }}>{g.progress}%</strong></span>
-            {(g.end_date||g.endDate) && <span style={{ fontSize:11, color:"var(--text2)" }}>🗓️ حتى {g.end_date||g.endDate}</span>}
-          </div>
-          <ProgressBar pct={g.progress} color={g.color} h={8}/>
-          {expandedGoal===g.id && (
-            <div className="subtask-list">
-              <div style={{ fontSize:12, color:"var(--text2)", margin:"12px 0 8px", fontWeight:600 }}>المهام الفرعية</div>
-              {(!g.subtasks||g.subtasks.length===0)&&<div style={{ fontSize:12, color:"var(--text3)", padding:"6px 0" }}>لا مهام فرعية بعد.</div>}
-              {(g.subtasks||[]).map(s => (
-                <div key={s.id} className="subtask-item">
-                  <span style={{ cursor:"pointer" }} onClick={() => toggleSubtask(g.id,s.id)}>{s.done?"✅":"⬜"}</span>
-                  <span style={{ flex:1, textDecoration:s.done?"line-through":"none", color:s.done?"var(--text3)":"var(--text)", cursor:"pointer" }} onClick={() => toggleSubtask(g.id,s.id)}>{s.title}</span>
-                  <button onClick={() => deleteSubtask(g.id,s.id)} style={{ background:"none", border:"none", cursor:"pointer", color:"var(--text3)", fontSize:13, padding:"0 4px" }}>✕</button>
+          <div className="card">
+            <div className="st" style={{marginBottom:10}}>📆 أيام الأسبوع</div>
+            {days.map(d=>(
+              <div key={d.s} style={{display:"flex",alignItems:"center",gap:9,marginBottom:7,padding:"6px 9px",borderRadius:8,background:d.isTod?"rgba(124,110,240,.08)":"var(--bg3)",border:`1px solid ${d.isTod?"rgba(124,110,240,.25)":"var(--brd)"}`}}>
+                <div style={{width:34,flexShrink:0,textAlign:"center"}}>
+                  <div style={{fontSize:8,color:d.isTod?"var(--a2)":"var(--t3)",fontWeight:700}}>{WD[d.d.getDay()]}</div>
+                  <div style={{fontSize:13,fontWeight:800,color:d.isTod?"var(--a2)":"var(--t)",fontFamily:"Tajawal"}}>{d.d.getDate()}</div>
                 </div>
-              ))}
-              <div style={{ display:"flex", gap:8, marginTop:12 }}>
-                <input className="form-input" style={{ flex:1, padding:"8px 12px" }} placeholder="أضف مهمة فرعية..." value={newSubtask} onChange={e => setNewSubtask(e.target.value)} onKeyDown={e => e.key==="Enter"&&addSubtask(g.id)} />
-                <button className="btn btn-primary btn-sm" onClick={() => addSubtask(g.id)}>+</button>
-              </div>
-            </div>
-          )}
-        </div>
-      ))}
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="إنشاء هدف جديد" icon="🎯">
-        <GoalForm form={addForm} setForm={setAddForm}/>
-        <div className="modal-actions"><button className="btn btn-ghost" onClick={() => setShowAdd(false)}>إلغاء</button><button className="btn btn-primary" onClick={addGoal}>إنشاء ✨</button></div>
-      </Modal>
-      <Modal open={!!editGoal} onClose={() => setEditGoal(null)} title="تعديل الهدف" icon="✏️">
-        <GoalForm form={editForm} setForm={setEditForm}/>
-        <div className="modal-actions"><button className="btn btn-ghost" onClick={() => setEditGoal(null)}>إلغاء</button><button className="btn btn-primary" onClick={saveEdit}>حفظ ✅</button></div>
-      </Modal>
-      <ConfirmDialog open={!!deleteGoal} onClose={() => setDeleteGoal(null)} onConfirm={doDelete} title="حذف الهدف" msg={`هل أنت متأكد من حذف "${deleteGoal?.title}"؟`}/>
-    </div>
-  );
-}
-
-// ── Tasks Page ───────────────────────────────────────────────
-function TaskForm({ form, setForm, goals }) {
-  function toggleDay(id) { setForm(p => ({ ...p, weekDays:(p.weekDays||[]).includes(id)?p.weekDays.filter(d=>d!==id):[...(p.weekDays||[]),id] })); }
-  return (
-    <>
-      <div className="form-group"><label className="form-label">عنوان المهمة *</label><input className="form-input" placeholder="ما الذي تريد إنجازه؟" value={form.title} onChange={e => setForm(p=>({...p,title:e.target.value}))}/></div>
-      <div className="form-row">
-        <div className="form-group"><label className="form-label">الأولوية</label><select className="form-select" value={form.priority} onChange={e=>setForm(p=>({...p,priority:e.target.value}))}><option value="high">🔴 عالية</option><option value="medium">🟡 متوسطة</option><option value="low">🔵 منخفضة</option></select></div>
-        <div className="form-group"><label className="form-label">📅 التاريخ</label><input type="date" className="form-input" value={form.date} onChange={e=>setForm(p=>({...p,date:e.target.value}))}/></div>
-      </div>
-      <div className="form-row">
-        <div className="form-group"><label className="form-label">⏰ وقت التذكير</label><input type="time" className="form-input" value={form.time||""} onChange={e=>setForm(p=>({...p,time:e.target.value}))}/></div>
-        <div className="form-group"><label className="form-label">🔁 التكرار</label><select className="form-select" value={form.repeat||"none"} onChange={e=>setForm(p=>({...p,repeat:e.target.value,weekDays:[]}))}>
-          <option value="none">🚫 لا تكرار</option><option value="daily">🔁 يومي</option><option value="weekly">📆 أسبوعي — أيام محددة</option><option value="monthly">🗓️ شهري</option>
-        </select></div>
-      </div>
-      {form.repeat==="weekly" && (
-        <div className="form-group"><label className="form-label">📆 أيام الأسبوع</label>
-          <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-            {WEEK_DAYS.map(d => { const sel=(form.weekDays||[]).includes(d.id); return <div key={d.id} onClick={()=>toggleDay(d.id)} style={{ padding:"6px 12px", borderRadius:20, fontSize:12, fontWeight:600, cursor:"pointer", border:`1px solid ${sel?"var(--accent)":"var(--border)"}`, background:sel?"var(--accent)":"var(--bg3)", color:sel?"white":"var(--text2)", transition:"all 0.2s" }}>{d.label}</div>; })}
-          </div>
-        </div>
-      )}
-      <div className="form-group"><label className="form-label">ربط بهدف (اختياري)</label><select className="form-select" value={form.goalId} onChange={e=>setForm(p=>({...p,goalId:e.target.value}))}><option value="">-- بدون هدف --</option>{goals.map(g=><option key={g.id} value={g.id}>{g.title}</option>)}</select></div>
-      {form.repeat&&form.repeat!=="none"&&<div style={{ background:"rgba(124,110,240,0.08)", border:"1px solid rgba(124,110,240,0.2)", borderRadius:10, padding:"10px 14px", fontSize:12, color:"var(--accent2)", display:"flex", alignItems:"center", gap:8, marginBottom:8 }}><span>✨</span><span>عند الإكمال ستُجدَّد تلقائياً ({REPEAT_LABELS[form.repeat]}){form.time?` • تذكير ${form.time} 🔔`:""}</span></div>}
-      <div className="form-group"><label className="form-label">📝 ملاحظات (اختياري)</label><textarea className="form-textarea" placeholder="أضف ملاحظاتك..." value={form.note||""} onChange={e=>setForm(p=>({...p,note:e.target.value}))} style={{ minHeight:64 }}/></div>
-    </>
-  );
-}
-
-function TasksPage({ tasks, setTasks, goals, setGoals, addNotif }) {
-  const [showAdd, setShowAdd]       = useState(false);
-  const [editTask, setEditTask]     = useState(null);
-  const [deleteTask, setDeleteTask] = useState(null);
-  const [addForm, setAddForm]       = useState(EMPTY_TASK_FORM);
-  const [editForm, setEditForm]     = useState(EMPTY_TASK_FORM);
-  const [filter, setFilter]         = useState("all");
-
-  async function addTask() {
-    if (!addForm.title.trim()) return;
-    const uid = (await supabase.auth.getUser()).data.user?.id;
-    const { data, error } = await supabase.from("tasks").insert({ user_id:uid, title:addForm.title, priority:addForm.priority, date:addForm.date, done:false, completed_at:null, repeat:addForm.repeat||"none", goal_id:addForm.goalId||null, note:addForm.note||null, time:addForm.time||null, week_days:addForm.weekDays?.length?addForm.weekDays:null }).select().single();
-    if (data) { setTasks(prev=>[...prev,{...data,completedAt:null,goalId:data.goal_id,note:data.note,time:data.time,weekDays:data.week_days}]); addNotif({type:"success",icon:"✅",title:"تم إضافة المهمة",msg:data.title}); }
-    else addNotif({type:"warning",icon:"⚠️",title:"خطأ",msg:error?.message});
-    setShowAdd(false); setAddForm(EMPTY_TASK_FORM);
-  }
-
-  function openEdit(t) { setEditForm({title:t.title,goalId:t.goalId?String(t.goalId):"",priority:t.priority,date:t.date,repeat:t.repeat||"none",note:t.note||"",time:t.time||"",weekDays:t.weekDays||t.week_days||[]}); setEditTask(t); }
-
-  async function saveEdit() {
-    if (!editForm.title.trim()) return;
-    await supabase.from("tasks").update({title:editForm.title,priority:editForm.priority,date:editForm.date,repeat:editForm.repeat||"none",goal_id:editForm.goalId||null,note:editForm.note||null,time:editForm.time||null,week_days:editForm.weekDays?.length?editForm.weekDays:null}).eq("id",editTask.id);
-    setTasks(prev=>prev.map(t=>t.id===editTask.id?{...t,...editForm,repeat:editForm.repeat||"none",goalId:editForm.goalId||null,weekDays:editForm.weekDays}:t));
-    addNotif({type:"info",icon:"✏️",title:"تم تعديل المهمة",msg:editForm.title}); setEditTask(null);
-  }
-
-  async function doDeleteTask() {
-    await supabase.from("tasks").delete().eq("id",deleteTask.id);
-    setTasks(prev=>prev.filter(t=>t.id!==deleteTask.id));
-    addNotif({type:"warning",icon:"🗑️",title:"تم حذف المهمة",msg:deleteTask.title}); setDeleteTask(null);
-  }
-
-  async function toggleTask(id) {
-    const task = tasks.find(t=>t.id===id); if(!task) return;
-    const done = !task.done;
-    const now  = new Date();
-    const completedAt = done?`${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}`:null;
-    await supabase.from("tasks").update({done,completed_at:completedAt}).eq("id",id);
-    const updatedTasks = tasks.map(t=>t.id===id?{...t,done,completedAt}:t);
-    setTasks(updatedTasks);
-    if(done){
-      addNotif({type:"success",icon:"🎉",title:"أحسنت! 🌟",msg:`أكملت: ${task.title}`});
-      const linkedGoalId = task.goalId||task.goal_id;
-      if(linkedGoalId){
-        const linkedGoal = goals.find(g=>g.id===linkedGoalId);
-        if(linkedGoal){
-          const goalTasks = updatedTasks.filter(t=>(t.goalId||t.goal_id)===linkedGoalId);
-          const donePct = goalTasks.length?Math.round(goalTasks.filter(t=>t.done).length/goalTasks.length*100):0;
-          const newProgress = Math.min(100,Math.max(linkedGoal.progress,donePct));
-          await supabase.from("goals").update({progress:newProgress}).eq("id",linkedGoalId);
-          setGoals(prev=>prev.map(g=>g.id===linkedGoalId?{...g,progress:newProgress}:g));
-          addNotif({type:"info",icon:"📈",title:`تقدم "${linkedGoal.title}"`,msg:`${newProgress}% ↑`});
-        }
-      }
-      if(task.repeat&&task.repeat!=="none"){
-        const uid = (await supabase.auth.getUser()).data.user?.id;
-        if(task.repeat==="weekly"&&task.weekDays?.length){
-          // Use today as base so weekly tasks always schedule from current date
-          const base=new Date(new Date().toISOString().split("T")[0]+"T00:00:00");
-          for(let wi=1;wi<=7;wi++){
-            const d=new Date(base);
-            d.setDate(d.getDate()+wi);
-            if(task.weekDays.includes(d.getDay())){
-              const nd=d.toISOString().split("T")[0];
-              const{data:exW}=await supabase.from("tasks").select("id").eq("user_id",uid).eq("title",task.title).eq("date",nd).eq("done",false).limit(1);
-              if(!exW||exW.length===0){
-                const{data:next}=await supabase.from("tasks").insert({user_id:uid,title:task.title,priority:task.priority,date:nd,done:false,completed_at:null,repeat:task.repeat,goal_id:task.goalId||task.goal_id||null,time:task.time||null,week_days:task.weekDays,note:task.note||null}).select().single();
-                if(next)setTasks(prev=>[...prev,{...next,completedAt:null,goalId:next.goal_id,weekDays:next.week_days}]);
-              }
-            }
-          }
-          addNotif({type:"info",icon:"🔁",title:"تم جدولة التكرار الأسبوعي",msg:task.title});
-        } else {
-          // Use TODAY as base to always schedule for next occurrence from now
-          const baseDate = new Date().toISOString().split("T")[0];
-          const nextDate = getNextRepeatDate(baseDate, task.repeat);
-          // Check in Supabase directly to avoid state sync issues
-          const {data:existing}=await supabase.from("tasks").select("id").eq("user_id",uid).eq("title",task.title).eq("date",nextDate).eq("done",false).limit(1);
-          if(!existing||existing.length===0){
-            const{data:next}=await supabase.from("tasks").insert({user_id:uid,title:task.title,priority:task.priority,date:nextDate,done:false,completed_at:null,repeat:task.repeat,goal_id:task.goalId||task.goal_id||null,time:task.time||null,week_days:task.weekDays||null,note:task.note||null}).select().single();
-            if(next){
-              setTasks(prev=>[...prev,{...next,completedAt:null,goalId:next.goal_id,weekDays:next.week_days}]);
-              addNotif({type:"info",icon:"🔁",title:"تم جدولة التكرار",msg:`${task.title} ← ${nextDate}`});
-            }
-          }
-        }
-      }
-    }
-  }
-
-  async function reschedule(id) {
-    const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);
-    const newDate=tomorrow.toISOString().split("T")[0];
-    await supabase.from("tasks").update({date:newDate}).eq("id",id);
-    setTasks(prev=>prev.map(t=>t.id===id?{...t,date:newDate}:t));
-    addNotif({type:"info",icon:"📅",title:"تم إعادة الجدولة",msg:"المهمة ستظهر غداً"});
-  }
-
-  const today=new Date().toISOString().split("T")[0];
-  const filtered=tasks.filter(t=>{
-    if(filter==="today") return t.date===today;
-    if(filter==="done")  return t.done;
-    if(filter==="pending") return !t.done && t.date < today; // متأخرة فقط — قبل اليوم
-    if(filter==="high")  return t.priority==="high";
-    return true;
-  }).sort((a,b)=>{if(a.done!==b.done)return a.done?1:-1;return({"high":0,"medium":1,"low":2}[a.priority]??1)-({"high":0,"medium":1,"low":2}[b.priority]??1);});
-
-  return (
-    <div className="page">
-      <div className="section-header">
-        <div className="section-title"><span>📋</span>المهام اليومية</div>
-        <div style={{display:"flex",gap:8}}>
-          <button className="btn btn-ghost btn-sm" onClick={async()=>{
-            const uid=(await supabase.auth.getUser()).data.user?.id;
-            const today=new Date().toISOString().split("T")[0];
-            const tomorrow=getNextRepeatDate(today,"daily");
-            let count=0;
-            const doneTodayRepeat=tasks.filter(t=>t.done&&t.repeat&&t.repeat!=="none");
-            for(const t of doneTodayRepeat){
-              const nd=t.repeat==="weekly"&&t.weekDays?.length ? (() => {
-                const base=new Date(today+"T00:00:00");
-                for(let wi=1;wi<=7;wi++){const d=new Date(base);d.setDate(d.getDate()+wi);if(t.weekDays.includes(d.getDay()))return d.toISOString().split("T")[0];}
-                return tomorrow;
-              })() : getNextRepeatDate(today,t.repeat);
-              const{data:ex}=await supabase.from("tasks").select("id").eq("user_id",uid).eq("title",t.title).eq("date",nd).eq("done",false).limit(1);
-              if(!ex||ex.length===0){
-                const{data:next}=await supabase.from("tasks").insert({user_id:uid,title:t.title,priority:t.priority,date:nd,done:false,completed_at:null,repeat:t.repeat,goal_id:t.goalId||t.goal_id||null,time:t.time||null,week_days:t.weekDays||null,note:t.note||null}).select().single();
-                if(next){setTasks(prev=>[...prev,{...next,completedAt:null,goalId:next.goal_id,weekDays:next.week_days}]);count++;}
-              }
-            }
-            addNotif({type:"success",icon:"🔁",title:`تم جدولة ${count} مهمة متكررة`,msg:"ستظهر في التواريخ القادمة"});
-          }} title="أعد جدولة المهام المتكررة">🔁 جدولة التكرار</button>
-          <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ مهمة جديدة</button>
-        </div>
-      </div>
-      <div className="tabs">
-        {[["all","الكل"],["today","اليوم"],["pending","معلقة"],["done","مكتملة"],["high","عالية"]].map(([v,l])=>(
-          <div key={v} className={`tab ${filter===v?"active":""}`} onClick={()=>setFilter(v)}>{l}</div>
-        ))}
-      </div>
-      {filtered.length===0?<div className="card empty"><div className="empty-icon">🎯</div><div className="empty-text">لا توجد مهام. أضف مهمتك الأولى!</div></div>
-      :filtered.map(t=>{
-        const goal=goals.find(g=>g.id===t.goalId);
-        return(
-          <div key={t.id} className={`task-item ${t.done?"done":""}`}>
-            <div className={`task-check ${t.done?"done":t.priority}`} onClick={()=>toggleTask(t.id)}>{t.done?"✓":""}</div>
-            <div style={{flex:1,minWidth:0}}>
-              <div className={`task-title ${t.done?"done":""}`} style={{cursor:"default"}}>{t.title}</div>
-              <div className="task-meta">
-                <span className={`badge ${t.priority}`}>{t.priority==="high"?"🔴 عالية":t.priority==="medium"?"🟡 متوسطة":"🔵 منخفضة"}</span>
-                {goal&&<span className="badge goal" style={{background:`${goal.color}20`,color:goal.color}}>🎯 {goal.title}</span>}
-                {t.time&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:20,background:"rgba(245,158,11,0.12)",color:"var(--amber)",fontWeight:600}}>⏰ {t.time}</span>}
-                {t.repeat&&t.repeat!=="none"&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:20,background:"rgba(124,110,240,0.12)",color:"var(--accent2)",fontWeight:600}}>{t.repeat==="daily"?"🔁 يومي":t.repeat==="weekly"&&t.weekDays?.length?`📆 ${t.weekDays.map(d=>["أحد","اثنين","ثلاثاء","أربعاء","خميس","جمعة","سبت"][d]).join("،")}`:"🗓️ شهري"}</span>}
-                <span style={{fontSize:10,color:"var(--text3)"}}>📅 {t.date}</span>
-                {t.completedAt&&<span style={{fontSize:10,color:"var(--green)"}}>✓ {t.completedAt}</span>}
-              </div>
-              {t.note&&<div style={{marginTop:5,padding:"4px 8px",background:"var(--bg4)",borderRadius:6,borderRight:"2px solid var(--accent3)",fontSize:11,color:"var(--text2)"}}>📝 {t.note}</div>}
-            </div>
-            <div style={{display:"flex",gap:4,flexShrink:0}}>
-              {!t.done&&<button className="btn-icon" style={{fontSize:13}} onClick={()=>reschedule(t.id)} title="إعادة جدولة">📅</button>}
-              <button className="btn-icon" style={{fontSize:13}} onClick={()=>openEdit(t)} title="تعديل">✏️</button>
-              <button className="btn-icon" style={{fontSize:13,color:"var(--red)"}} onClick={()=>setDeleteTask(t)} title="حذف">🗑️</button>
-            </div>
-          </div>
-        );
-      })}
-      <Modal open={showAdd} onClose={()=>setShowAdd(false)} title="إضافة مهمة جديدة" icon="✅"><TaskForm form={addForm} setForm={setAddForm} goals={goals}/><div className="modal-actions"><button className="btn btn-ghost" onClick={()=>setShowAdd(false)}>إلغاء</button><button className="btn btn-primary" onClick={addTask}>إضافة المهمة</button></div></Modal>
-      <Modal open={!!editTask} onClose={()=>setEditTask(null)} title="تعديل المهمة" icon="✏️"><TaskForm form={editForm} setForm={setEditForm} goals={goals}/><div className="modal-actions"><button className="btn btn-ghost" onClick={()=>setEditTask(null)}>إلغاء</button><button className="btn btn-primary" onClick={saveEdit}>حفظ ✅</button></div></Modal>
-      <ConfirmDialog open={!!deleteTask} onClose={()=>setDeleteTask(null)} onConfirm={doDeleteTask} title="حذف المهمة" msg={`هل أنت متأكد من حذف "${deleteTask?.title}"؟`}/>
-    </div>
-  );
-}
-
-// ── Pomodoro Page ────────────────────────────────────────────
-const POMO_KEY = "injaz-pomo-state";
-
-function savePomo(state) {
-  try { localStorage.setItem(POMO_KEY, JSON.stringify(state)); } catch(e){}
-}
-function loadPomo() {
-  try { return JSON.parse(localStorage.getItem(POMO_KEY)); } catch(e){ return null; }
-}
-
-function PomodoroPage({ onSession, addNotif, goals }) {
-  const saved = loadPomo();
-
-  const [workMin, setWorkMin]   = useState(saved?.workMin || 25);
-  const [breakMin, setBreakMin] = useState(saved?.breakMin || 5);
-  const [phase, setPhase]       = useState(saved?.phase || "work");
-  const [sessions, setSessions] = useState(saved?.sessions || 0);
-  const [selectedGoal, setSelectedGoal] = useState(saved?.selectedGoal || null);
-  const [showGoalPicker, setShowGoalPicker] = useState(false);
-  const [sessionLog, setSessionLog] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("injaz-pomo-log")) || []; } catch { return []; }
-  });
-
-  // Compute remaining secs from saved start time
-  const getRemaining = () => {
-    const s = loadPomo();
-    if(s?.isRunning && s?.startedAt) {
-      const elapsed = Math.floor((Date.now() - s.startedAt) / 1000);
-      const total = s.phase==="work" ? s.workMin*60 : s.breakMin*60;
-      return Math.max(0, total - elapsed);
-    }
-    return saved?.secs ?? (saved?.workMin||25)*60;
-  };
-
-  const [secs, setSecs] = useState(getRemaining);
-  const [isRunning, setIsRunning] = useState(()=>{
-    const s=loadPomo();
-    if(s?.isRunning && s?.startedAt){
-      const elapsed=Math.floor((Date.now()-s.startedAt)/1000);
-      const total=(s.phase==="work"?s.workMin:s.breakMin)*60;
-      return elapsed < total;
-    }
-    return false;
-  });
-
-  const intervalRef = useRef(null);
-  const totalSecs = phase==="work" ? workMin*60 : breakMin*60;
-
-  // Save state to localStorage on every change
-  useEffect(()=>{
-    const s = loadPomo() || {};
-    savePomo({ ...s, workMin, breakMin, phase, sessions, secs, isRunning,
-      startedAt: isRunning ? (s.startedAt || Date.now()) : null,
-      selectedGoal
-    });
-  },[workMin,breakMin,phase,sessions,secs,isRunning,selectedGoal]);
-
-  useEffect(()=>{
-    if(!isRunning) return;
-
-    // Make sure startedAt is saved
-    const s = loadPomo() || {};
-    if(!s.startedAt) {
-      savePomo({...s, startedAt: Date.now(), isRunning: true});
-    }
-
-    function tick(){
-      const state = loadPomo();
-      if(!state?.startedAt) return;
-      const elapsed = Math.floor((Date.now() - state.startedAt) / 1000);
-      const total = state.phase==="work" ? state.workMin*60 : state.breakMin*60;
-      const remaining = Math.max(0, total - elapsed);
-      setSecs(remaining);
-
-      if(remaining <= 0){
-        clearInterval(intervalRef.current);
-        if(state.phase==="work"){
-          const newSessions = (state.sessions||0)+1;
-          addNotif({type:"success",icon:"🍅",title:"انتهت جلسة التركيز!",msg:state.selectedGoal?`الهدف: ${state.selectedGoal.title}`:"خذ استراحة"});
-          onSession(state.workMin);
-          setSessions(newSessions);
-          // Log session
-          const log = [{
-            id: Date.now(),
-            goalId: state.selectedGoal?.id,
-            goalTitle: state.selectedGoal?.title,
-            goalColor: state.selectedGoal?.color,
-            mins: state.workMin,
-            date: new Date().toLocaleDateString("ar-EG",{day:"numeric",month:"short"}),
-            time: new Date().toLocaleTimeString("ar",{hour:"2-digit",minute:"2-digit"}),
-          }, ...((JSON.parse(localStorage.getItem("injaz-pomo-log"))||[]).slice(0,29))];
-          localStorage.setItem("injaz-pomo-log", JSON.stringify(log));
-          setSessionLog(log);
-          setPhase("break");
-          setSecs(state.breakMin*60);
-          savePomo({...state, phase:"break", sessions:newSessions, secs:state.breakMin*60, startedAt:Date.now()});
-        } else {
-          addNotif({type:"info",icon:"💪",title:"انتهت الاستراحة!",msg:"جاهز للجولة التالية؟"});
-          setPhase("work");
-          setSecs(state.workMin*60);
-          savePomo({...state, phase:"work", secs:state.workMin*60, startedAt:Date.now()});
-        }
-        setIsRunning(false);
-        savePomo({...loadPomo(), isRunning:false, startedAt:null});
-      }
-    }
-
-    intervalRef.current = setInterval(tick, 500);
-    tick();
-    return ()=>clearInterval(intervalRef.current);
-  },[isRunning]);
-
-  // Visibility change — recalc on return
-  useEffect(()=>{
-    function onVisible(){
-      if(document.visibilityState!=="visible") return;
-      const state=loadPomo();
-      if(state?.isRunning && state?.startedAt){
-        const elapsed=Math.floor((Date.now()-state.startedAt)/1000);
-        const total=(state.phase==="work"?state.workMin:state.breakMin)*60;
-        const remaining=Math.max(0,total-elapsed);
-        setSecs(remaining);
-        if(remaining<=0) setIsRunning(false);
-      }
-    }
-    document.addEventListener("visibilitychange",onVisible);
-    return ()=>document.removeEventListener("visibilitychange",onVisible);
-  },[]);
-
-  function handleStart(){
-    if(!selectedGoal){ setShowGoalPicker(true); return; }
-    const s=loadPomo()||{};
-    savePomo({...s,isRunning:true,startedAt:Date.now(),phase,workMin,breakMin,sessions,selectedGoal});
-    setIsRunning(true);
-  }
-
-  function handlePause(){
-    clearInterval(intervalRef.current);
-    setIsRunning(false);
-    const s=loadPomo()||{};
-    savePomo({...s,isRunning:false,startedAt:null,secs});
-  }
-
-  function handleReset(){
-    clearInterval(intervalRef.current);
-    setIsRunning(false);
-    setPhase("work");
-    setSecs(workMin*60);
-    savePomo({workMin,breakMin,phase:"work",sessions,secs:workMin*60,isRunning:false,startedAt:null,selectedGoal});
-  }
-
-  const mins=Math.floor(secs/60).toString().padStart(2,"0");
-  const sec2=(secs%60).toString().padStart(2,"0");
-  const circum=2*Math.PI*90;
-  const dashOffset=circum-(circum*(1-secs/totalSecs));
-  const strokeColor=phase==="work"?"var(--accent)":"var(--green)";
-
-  return(
-    <div className="page">
-      <div className="section-title" style={{justifyContent:"center",fontSize:20,marginBottom:20}}><span>🍅</span> مؤقت بومودورو</div>
-
-      {/* Goal picker modal */}
-      {showGoalPicker && (
-        <div className="modal-overlay" onClick={()=>setShowGoalPicker(false)}>
-          <div className="modal" style={{maxWidth:400}} onClick={e=>e.stopPropagation()}>
-            <div className="modal-title">🎯 اختر هدف الجلسة</div>
-            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
-              {goals.filter(g=>g.status==="active").map(g=>(
-                <div key={g.id} onClick={()=>{setSelectedGoal(g);setShowGoalPicker(false);const s=loadPomo()||{};savePomo({...s,selectedGoal:g,isRunning:true,startedAt:Date.now(),phase,workMin,breakMin,sessions});setIsRunning(true);}} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderRadius:12,cursor:"pointer",background:"var(--bg3)",border:"1px solid var(--border)",transition:"all 0.2s"}}
-                  onMouseEnter={e=>e.currentTarget.style.borderColor=g.color}
-                  onMouseLeave={e=>e.currentTarget.style.borderColor="var(--border)"}>
-                  <div style={{width:12,height:12,borderRadius:"50%",background:g.color,flexShrink:0}}/>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:14,fontWeight:600}}>{g.title}</div>
-                    <div style={{fontSize:11,color:"var(--text2)",marginTop:2}}>{g.category||"عام"} • {g.progress}%</div>
-                  </div>
-                  <ProgressBar pct={g.progress} color={g.color} h={4}/>
-                </div>
-              ))}
-              {goals.filter(g=>g.status==="active").length===0&&<div style={{textAlign:"center",padding:"20px 0",color:"var(--text3)"}}>لا أهداف نشطة — أضف هدفاً أولاً</div>}
-            </div>
-            <button className="btn btn-ghost" style={{width:"100%",justifyContent:"center"}} onClick={()=>setShowGoalPicker(false)}>إلغاء</button>
-          </div>
-        </div>
-      )}
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,maxWidth:900,margin:"0 auto"}}>
-
-        {/* Timer */}
-        <div className="card">
-          <div style={{textAlign:"center"}}>
-            {/* Selected goal badge */}
-            <div style={{marginBottom:16,minHeight:32}}>
-              {selectedGoal ? (
-                <div style={{display:"inline-flex",alignItems:"center",gap:8,padding:"6px 14px",borderRadius:20,background:`${selectedGoal.color}18`,border:`1px solid ${selectedGoal.color}40`,cursor:"pointer"}} onClick={()=>!isRunning&&setShowGoalPicker(true)}>
-                  <div style={{width:8,height:8,borderRadius:"50%",background:selectedGoal.color}}/>
-                  <span style={{fontSize:12,fontWeight:600,color:selectedGoal.color}}>{selectedGoal.title}</span>
-                  {!isRunning&&<span style={{fontSize:10,color:"var(--text3)"}}>✎</span>}
-                </div>
-              ) : (
-                <div style={{fontSize:12,color:"var(--text3)"}}>اختر هدفاً قبل البدء</div>
-              )}
-            </div>
-
-            <div className="tabs" style={{maxWidth:200,margin:"0 auto 20px"}}>
-              <div className={`tab ${phase==="work"?"active":""}`} onClick={()=>{if(!isRunning){setPhase("work");setSecs(workMin*60);}}}>عمل</div>
-              <div className={`tab ${phase==="break"?"active":""}`} onClick={()=>{if(!isRunning){setPhase("break");setSecs(breakMin*60);}}}>راحة</div>
-            </div>
-
-            <div style={{position:"relative",width:200,height:200,margin:"0 auto 20px"}}>
-              <svg width="200" height="200" viewBox="0 0 220 220" style={{transform:"rotate(-90deg)"}}>
-                <circle className="pomo-circle-bg" cx="110" cy="110" r="90"/>
-                <circle cx="110" cy="110" r="90" fill="none" stroke={strokeColor} strokeWidth="8" strokeLinecap="round" strokeDasharray={circum} strokeDashoffset={dashOffset} style={{filter:`drop-shadow(0 0 12px ${phase==="work"?"rgba(124,110,240,0.5)":"rgba(16,185,129,0.5)"})`}}/>
-              </svg>
-              <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center"}}>
-                <div style={{fontFamily:"Tajawal,sans-serif",fontSize:42,fontWeight:900,lineHeight:1,color:strokeColor}}>{mins}:{sec2}</div>
-                <div style={{fontSize:11,color:"var(--text2)",marginTop:4}}>{phase==="work"?"🎯 تركيز":"☕ راحة"}</div>
-              </div>
-            </div>
-
-            <div style={{display:"flex",justifyContent:"center",gap:12,marginBottom:16}}>
-              <button className="pomo-btn pomo-btn-secondary" onClick={handleReset} title="إعادة">↺</button>
-              <button className="pomo-btn pomo-btn-main" onClick={isRunning?handlePause:handleStart}>{isRunning?"⏸":"▶"}</button>
-              <button className="pomo-btn pomo-btn-secondary" onClick={()=>{if(!isRunning){setPhase(phase==="work"?"break":"work");setSecs(phase==="work"?breakMin*60:workMin*60);}}} title="تخطي">⏭</button>
-            </div>
-
-            {!isRunning&&!selectedGoal&&(
-              <div style={{background:"rgba(124,110,240,0.08)",border:"1px solid rgba(124,110,240,0.2)",borderRadius:10,padding:"10px 14px",fontSize:12,color:"var(--accent2)",marginBottom:12}}>
-                ⚠️ اضغط ▶ لاختيار الهدف والبدء
-              </div>
-            )}
-
-            <div style={{marginBottom:12}}>
-              <div style={{fontSize:11,color:"var(--text2)",marginBottom:6}}>جلسات اليوم: <strong style={{color:"var(--accent2)"}}>{sessions}</strong></div>
-              <div style={{display:"flex",justifyContent:"center",gap:5}}>{[...Array(8)].map((_,i)=><div key={i} className={`pomo-dot ${i<sessions?"done":""}`}/>)}</div>
-            </div>
-
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              {[["⏱️ عمل",workMin,setWorkMin],["☕ راحة",breakMin,setBreakMin]].map(([lbl,val,setter])=>(
-                <div key={lbl} style={{background:"var(--bg3)",border:"1px solid var(--border)",borderRadius:10,padding:10,textAlign:"center"}}>
-                  <div style={{fontSize:10,color:"var(--text2)",marginBottom:5}}>{lbl} (دقيقة)</div>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-                    <div onClick={()=>{if(!isRunning)setter(p=>Math.max(1,p-1));}} style={{width:22,height:22,borderRadius:6,background:"var(--bg4)",border:"1px solid var(--border)",cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text2)"}}>−</div>
-                    <div style={{fontSize:18,fontWeight:700,fontFamily:"Tajawal,sans-serif"}}>{val}</div>
-                    <div onClick={()=>{if(!isRunning)setter(p=>Math.min(90,p+1));}} style={{width:22,height:22,borderRadius:6,background:"var(--bg4)",border:"1px solid var(--border)",cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text2)"}}>+</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Session log */}
-        <div className="card">
-          <div className="section-title" style={{marginBottom:16}}><span>📊</span> سجل الجلسات</div>
-          {sessionLog.length===0?(
-            <div style={{textAlign:"center",padding:"30px 0",color:"var(--text3)"}}>
-              <div style={{fontSize:32,marginBottom:8}}>🍅</div>
-              <div style={{fontSize:13}}>لا جلسات بعد — ابدأ مؤقتك الأول!</div>
-            </div>
-          ):(
-            <div style={{maxHeight:420,overflowY:"auto"}}>
-              {sessionLog.map((s,i)=>(
-                <div key={s.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:10,background:"var(--bg3)",border:"1px solid var(--border)",marginBottom:8}}>
-                  <div style={{width:36,height:36,borderRadius:10,background:s.goalColor?`${s.goalColor}20`:"var(--bg4)",border:`1px solid ${s.goalColor||"var(--border)"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🍅</div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:600,color:s.goalColor||"var(--text)"}}>
-                      {s.goalTitle||"بدون هدف"}
-                    </div>
-                    <div style={{fontSize:11,color:"var(--text2)",marginTop:2}}>
-                      {s.date} • {s.time} • {s.mins} دقيقة
-                    </div>
-                  </div>
-                  <div style={{fontSize:11,padding:"3px 8px",borderRadius:20,background:"rgba(124,110,240,0.1)",color:"var(--accent2)",fontWeight:600,flexShrink:0}}>
-                    #{sessionLog.length-i}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {sessionLog.length>0&&(
-            <div style={{marginTop:12,padding:"10px 14px",background:"var(--bg3)",borderRadius:10,border:"1px solid var(--border)"}}>
-              <div style={{fontSize:11,color:"var(--text2)",marginBottom:8,fontWeight:600}}>⏱️ إجمالي وقت التركيز</div>
-              {Object.entries(sessionLog.reduce((acc,s)=>{
-                const key=s.goalTitle||"بدون هدف";
-                const color=s.goalColor||"var(--text2)";
-                if(!acc[key]) acc[key]={mins:0,color};
-                acc[key].mins+=s.mins; return acc;
-              },{})).map(([goal,{mins,color}])=>(
-                <div key={goal} style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                  <span style={{fontSize:11,color}}>{goal}</span>
-                  <span style={{fontSize:11,fontWeight:700,color}}>{Math.floor(mins/60)}س {mins%60}د</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-      </div>
-    </div>
-  );
-}
-
-// ── Stats Page ───────────────────────────────────────────────
-function StatsPage({ tasks, goals, pomodoroSessions, todayFocus }) {
-  const [chartType, setChartType] = useState("tasks");
-  const done=tasks.filter(t=>t.done).length;
-  const total=tasks.length;
-  const pct=total?Math.round(done/total*100):0;
-  const topGoal=[...goals].sort((a,b)=>b.progress-a.progress)[0];
-  const maxVal=Math.max(...WEEKLY_STATS.map(d=>chartType==="tasks"?d.tasks:d.focus),1);
-  return(
-    <div className="page">
-      <div className="section-title" style={{fontSize:20,marginBottom:20}}><span>📊</span> الإحصائيات</div>
-      <div className="stats-grid">
-        {[["✅",done,"مهام مكتملة","purple"],["🎯",todayFocus.toFixed(1)+"س","ساعات تركيز","green"],["🍅",pomodoroSessions,"جلسات بومودورو","amber"],["📈",pct+"%","معدل الإنجاز","blue"]].map(([icon,val,label,cls])=>(
-          <div key={label} className={`stat-card ${cls}`} style={{padding:16}}>
-            <div style={{fontSize:22,marginBottom:6}}>{icon}</div>
-            <div className="stat-value" style={{fontSize:28}}>{val}</div>
-            <div className="stat-label">{label}</div>
-          </div>
-        ))}
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-        <div className="card">
-          <div className="section-header">
-            <div className="section-title"><span>📅</span> هذا الأسبوع</div>
-            <div style={{display:"flex",gap:4}}>
-              <button className={`btn btn-sm ${chartType==="tasks"?"btn-primary":"btn-ghost"}`} onClick={()=>setChartType("tasks")}>مهام</button>
-              <button className={`btn btn-sm ${chartType==="focus"?"btn-primary":"btn-ghost"}`} onClick={()=>setChartType("focus")}>تركيز</button>
-            </div>
-          </div>
-          <div className="chart-bar-wrap">
-            {WEEKLY_STATS.map((d,i)=>{const val=chartType==="tasks"?d.tasks:d.focus;const h=Math.max(8,val/maxVal*100);return(<div key={i} className="chart-bar-col"><div className="chart-bar-value">{chartType==="tasks"?d.tasks:`${d.focus}س`}</div><div className="chart-bar" style={{height:`${h}%`,background:"linear-gradient(180deg,var(--accent),var(--accent3))"}}/><div className="chart-bar-label">{d.day.slice(0,2)}</div></div>);})}
-          </div>
-        </div>
-        <div className="card">
-          <div className="section-title" style={{marginBottom:16}}><span>🎯</span> تقدم الأهداف</div>
-          {goals.slice(0,4).map(g=>(
-            <div key={g.id} style={{marginBottom:14}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{fontSize:13}}>{g.title}</span><span style={{fontSize:12,color:g.color,fontWeight:700}}>{g.progress}%</span></div>
-              <ProgressBar pct={g.progress} color={g.color} h={7}/>
-            </div>
-          ))}
-          {topGoal&&<div style={{marginTop:14,padding:"10px 14px",background:"var(--bg3)",borderRadius:10,border:"1px solid var(--border)"}}><div style={{fontSize:11,color:"var(--text2)",marginBottom:4}}>🏆 أفضل هدف</div><div style={{fontSize:14,fontWeight:600,color:topGoal.color}}>{topGoal.title} — {topGoal.progress}%</div></div>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── AI Page ──────────────────────────────────────────────────
-function AIPage({ tasks, goals, addNotif }) {
-  const [messages, setMessages] = useState([{ role:"bot", text:"مرحباً! أنا مساعدك الذكي للإنتاجية 🤖\n\nيمكنني مساعدتك في:\n• تحليل مهامك وأهدافك\n• اقتراح جدول يومك\n• تحديد أسباب التأجيل\n• تقديم نصائح مخصصة\n\nما الذي تريد معرفته اليوم؟" }]);
-  const [input, setInput]       = useState("");
-  const [loading, setLoading]   = useState(false);
-  const bottomRef = useRef(null);
-  useEffect(()=>{ bottomRef.current?.scrollIntoView({behavior:"smooth"}); },[messages]);
-
-  const suggestions=["ما أهم مهمة يجب إنجازها اليوم؟","حلل أسباب تأجيلي للمهام","كيف أحسّن إنتاجيتي؟","رتّب لي جدول اليوم","راجع أدائي هذا الأسبوع"];
-
-  async function send() {
-    if(!input.trim()||loading) return;
-    const userMsg=input.trim(); setInput(""); setMessages(prev=>[...prev,{role:"user",text:userMsg}]); setLoading(true);
-    const today=new Date().toISOString().split("T")[0];
-    const todayTasks=tasks.filter(t=>t.date===today);
-    const systemPrompt=`أنت مساعد إنتاجية ذكي باللغة العربية.\nبيانات المستخدم:\n- المهام اليوم: ${todayTasks.length} (${tasks.filter(t=>t.done&&t.date===today).length} مكتملة)\n- الأهداف النشطة: ${goals.filter(g=>g.status==="active").map(g=>`${g.title} (${g.progress}%)`).join("، ")}\nقدم نصائح مخصصة وعملية باللغة العربية. كن موجزاً ومفيداً. استخدم الإيموجي.`;
-    try {
-      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:systemPrompt,messages:[{role:"user",content:userMsg}]})});
-      const data=await res.json();
-      setMessages(prev=>[...prev,{role:"bot",text:data.content?.[0]?.text||"عذراً، حدث خطأ."}]);
-    } catch { setMessages(prev=>[...prev,{role:"bot",text:"عذراً، لم أتمكن من الاتصال."}]); }
-    setLoading(false);
-  }
-
-  return(
-    <div className="page">
-      <div className="section-title" style={{fontSize:20,marginBottom:16}}><span>🤖</span> المساعد الذكي</div>
-      <div className="card" style={{marginBottom:16,padding:"16px 20px"}}>
-        <div style={{fontSize:12,color:"var(--text2)",marginBottom:10,fontWeight:600}}>💡 اقتراحات سريعة:</div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{suggestions.map(s=><button key={s} className="btn btn-ghost btn-sm" onClick={()=>setInput(s)}>{s}</button>)}</div>
-      </div>
-      <div className="card" style={{display:"flex",flexDirection:"column",minHeight:400}}>
-        <div className="ai-chat" style={{flex:1,maxHeight:450,overflowY:"auto",padding:4}}>
-          {messages.map((m,i)=>(
-            <div key={i} className={`ai-message ${m.role==="user"?"user":""}`}>
-              <div className={`ai-avatar ${m.role==="user"?"user":""}`}>{m.role==="bot"?"🤖":"👤"}</div>
-              <div className={`ai-bubble ${m.role==="bot"?"bot":"user"}`} style={{whiteSpace:"pre-line"}}>{m.text}</div>
-            </div>
-          ))}
-          {loading&&<div className="ai-message"><div className="ai-avatar">🤖</div><div className="ai-bubble bot" style={{display:"flex",gap:8,alignItems:"center"}}><div className="spinner"/><span style={{color:"var(--text2)",fontSize:13}}>يفكر...</span></div></div>}
-          <div ref={bottomRef}/>
-        </div>
-        <div style={{borderTop:"1px solid var(--border)",paddingTop:16,marginTop:12}}>
-          <div className="ai-input-row">
-            <input className="ai-input" placeholder="اسألني أي شيء عن إنتاجيتك..." value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&send()}/>
-            <button className="btn btn-primary" onClick={send} disabled={loading} style={{flexShrink:0}}>{loading?<div className="spinner"/>:"إرسال ✈️"}</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Auth Page ────────────────────────────────────────────────
-function AuthPage({ onAuth }) {
-  const [mode, setMode]       = useState("login");
-  const [email, setEmail]     = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState("");
-
-  async function submit() {
-    if(!email||!password){setError("يرجى إدخال البريد وكلمة المرور");return;}
-    setLoading(true);setError("");
-    try {
-      let result;
-      if(mode==="login") result=await supabase.auth.signInWithPassword({email,password});
-      else result=await supabase.auth.signUp({email,password});
-      if(result.error) setError(result.error.message);
-      else if(result.data?.user) onAuth(result.data.user);
-      else if(mode==="signup"){setError("تم إنشاء الحساب! تحقق من بريدك للتفعيل ثم سجّل دخول.");setMode("login");}
-    } catch { setError("حدث خطأ، حاول مرة أخرى"); }
-    setLoading(false);
-  }
-
-  return(
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)",fontFamily:"'IBM Plex Sans Arabic',sans-serif",direction:"rtl"}}>
-      <style>{styles}</style>
-      <div style={{width:"100%",maxWidth:400,padding:"0 20px"}}>
-        <div style={{textAlign:"center",marginBottom:32}}>
-          <div style={{width:64,height:64,background:"linear-gradient(135deg,var(--accent),var(--accent3))",borderRadius:18,display:"flex",alignItems:"center",justifyContent:"center",fontSize:32,margin:"0 auto 16px",boxShadow:"0 8px 30px rgba(124,110,240,0.4)"}}>⚡</div>
-          <div style={{fontSize:28,fontWeight:900,fontFamily:"Tajawal,sans-serif",color:"var(--text)"}}>إنجاز</div>
-          <div style={{fontSize:13,color:"var(--text2)",marginTop:4}}>نظام إدارة حياتك الشخصية</div>
-        </div>
-        <div className="card" style={{padding:28}}>
-          <div className="tabs" style={{marginBottom:24}}>
-            <div className={`tab ${mode==="login"?"active":""}`} onClick={()=>{setMode("login");setError("");}}>تسجيل الدخول</div>
-            <div className={`tab ${mode==="signup"?"active":""}`} onClick={()=>{setMode("signup");setError("");}}>حساب جديد</div>
-          </div>
-          <div className="form-group"><label className="form-label">📧 البريد الإلكتروني</label><input className="form-input" type="email" placeholder="your@email.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}/></div>
-          <div className="form-group"><label className="form-label">🔒 كلمة المرور</label><input className="form-input" type="password" placeholder="••••••••" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}/></div>
-          {error&&<div style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",borderRadius:10,padding:"10px 14px",fontSize:13,color:"var(--red)",marginBottom:16}}>{error}</div>}
-          <button className="btn btn-primary" onClick={submit} disabled={loading} style={{width:"100%",justifyContent:"center",height:44,fontSize:15}}>
-            {loading?<div className="spinner"/>:mode==="login"?"🚀 دخول":"✨ إنشاء حساب"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Main App ─────────────────────────────────────────────────
-export default function App() {
-  const [page, setPage]           = useState("dashboard");
-  const [user, setUser]           = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [dataLoaded, setDataLoaded]   = useState(false);
-  const [goals, setGoalsState]    = useState([]);
-  const [tasks, setTasksState]    = useState([]);
-  const [pomodoroSessions, setPomodoroSessions] = useState(0);
-  const [todayFocus, setTodayFocus]   = useState(0);
-  const [notifs, setNotifs]       = useState([]);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [dbLoading, setDbLoading] = useState(true);
-  const [activeAlerts, setActiveAlerts] = useState([]);
-
-  const setGoals = setGoalsState;
-  const setTasks = setTasksState;
-
-  // Auth
-  useEffect(()=>{
-    supabase.auth.getSession().then(({data})=>{ setUser(data.session?.user||null); setAuthLoading(false); });
-    const {data:listener}=supabase.auth.onAuthStateChange((_e,session)=>setUser(session?.user||null));
-    return ()=>listener.subscription.unsubscribe();
-  },[]);
-
-  useEffect(()=>{ if(user) loadData(user.id); else { setGoalsState([]); setTasksState([]); } },[user]);
-
-  async function loadData(uid) {
-    setDbLoading(true); setDataLoaded(false); setGoalsState([]); setTasksState([]);
-    try {
-      const [{data:gd},{data:td}]=await Promise.all([
-        supabase.from("goals").select("*").eq("user_id",uid).order("created_at"),
-        supabase.from("tasks").select("*").eq("user_id",uid).order("created_at"),
-      ]);
-      if(gd) setGoalsState(gd.map(g=>({...g,subtasks:g.subtasks||[]})));
-      if(td) setTasksState(td.map(t=>({...t,completedAt:t.completed_at,goalId:t.goal_id,note:t.note,time:t.time,weekDays:t.week_days||[]})));
-    } catch(e) { console.error(e); }
-    setDbLoading(false); setDataLoaded(true);
-  }
-
-  // Notifications
-  useEffect(()=>{
-    if(!user) return;
-    if("Notification" in window && Notification.permission==="default") Notification.requestPermission();
-    function sendAlert(task,type){
-      const key=`alert-${task.id}-${type}-${new Date().toDateString()}`;
-      if(sessionStorage.getItem(key)) return; sessionStorage.setItem(key,"1");
-      const isNow=type==="now"; const alertId=Date.now()+Math.random();
-      setActiveAlerts(prev=>[...prev,{id:alertId,task,isNow}]);
-      setTimeout(()=>setActiveAlerts(prev=>prev.filter(a=>a.id!==alertId)),10000);
-      if("Notification" in window&&Notification.permission==="granted"){
-        try{ new Notification(isNow?"⏰ حان وقت المهمة!":"🔔 تذكير — بعد 5 دقائق",{body:task.title,dir:"rtl",lang:"ar",icon:"/icons/icon-192.png",tag:key}); }catch(e){}
-      }
-      try{
-        const ctx=new(window.AudioContext||window.webkitAudioContext)();
-        [isNow?880:660,isNow?1100:880].forEach((freq,i)=>{
-          const osc=ctx.createOscillator(); const gain=ctx.createGain();
-          osc.connect(gain); gain.connect(ctx.destination);
-          osc.frequency.value=freq; osc.type="sine";
-          gain.gain.setValueAtTime(0.25,ctx.currentTime+i*0.25);
-          gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+i*0.25+0.4);
-          osc.start(ctx.currentTime+i*0.25); osc.stop(ctx.currentTime+i*0.25+0.4);
-        });
-      }catch(e){}
-    }
-    function checkTasks(){
-      const now=new Date(); const today=now.toISOString().split("T")[0];
-      const hh=now.getHours().toString().padStart(2,"0"); const mm=now.getMinutes().toString().padStart(2,"0");
-      const currentTime=`${hh}:${mm}`;
-      tasks.forEach(t=>{
-        if(t.done||t.date!==today||!t.time) return;
-        if(t.time===currentTime) sendAlert(t,"now");
-        else{ try{ const td2=new Date(`${today}T${t.time}:00`); const diff=td2-now; if(diff>0&&diff<=5*60*1000+59000) sendAlert(t,"warn"); }catch(e){} }
-      });
-    }
-    const interval=setInterval(checkTasks,30000); checkTasks();
-    return ()=>clearInterval(interval);
-  },[user,tasks]);
-
-  function addNotif(n) { const id=Date.now(); setNotifs(p=>[...p,{...n,id}]); setTimeout(()=>setNotifs(p=>p.filter(x=>x.id!==id)),3500); }
-  function onPomodoroSession(mins) { setPomodoroSessions(p=>p+1); setTodayFocus(p=>p+mins/60); }
-  async function logout() { await supabase.auth.signOut(); setUser(null); }
-
-  const today=new Date();
-  const dateStr=today.toLocaleDateString("ar-EG",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
-  const todayStr=today.toISOString().split("T")[0];
-  const pendingCount=tasks.filter(t=>!t.done&&t.date<todayStr).length; // متأخرة فقط
-  const NAV=[
-    {id:"dashboard",icon:"🏠",label:"الرئيسية"},
-    {id:"goals",icon:"🎯",label:"الأهداف"},
-    {id:"tasks",icon:"✅",label:"المهام",badge:pendingCount||null},
-    {id:"pomodoro",icon:"🍅",label:"بومودورو"},
-    {id:"stats",icon:"📊",label:"الإحصائيات"},
-    {id:"ai",icon:"🤖",label:"المساعد الذكي"},
-  ];
-  const PAGE_TITLES={dashboard:"لوحة التحكم",goals:"إدارة الأهداف",tasks:"المهام اليومية",pomodoro:"مؤقت بومودورو",stats:"الإحصائيات",ai:"المساعد الذكي"};
-
-  const LoadingScreen=()=>(
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#0a0b0f",flexDirection:"column",gap:16}}>
-      <style>{styles}</style>
-      <div style={{fontSize:52}}>⚡</div>
-      <div className="spinner" style={{margin:"0 auto"}}/>
-      <div style={{color:"var(--text2)",fontSize:13,fontFamily:"IBM Plex Sans Arabic,sans-serif"}}>جاري تحميل بياناتك...</div>
-    </div>
-  );
-
-  if(authLoading) return <LoadingScreen/>;
-  if(!user) return <AuthPage onAuth={setUser}/>;
-  if(!dataLoaded) return <LoadingScreen/>;
-
-  return(
-    <>
-      <style>{styles}</style>
-      <div className="app-shell">
-        <div className={`mobile-overlay ${sidebarOpen?"show":""}`} onClick={()=>setSidebarOpen(false)}/>
-        <nav className={`sidebar ${sidebarOpen?"open":""}`}>
-          <div className="sidebar-logo">
-            <div className="logo-mark">
-              <div className="logo-icon">⚡</div>
-              <div><div className="logo-text">إنجاز</div><div className="logo-sub">نظام إدارة حياتك</div></div>
-            </div>
-          </div>
-          <div className="nav-section">
-            <div className="nav-label">القائمة الرئيسية</div>
-            {NAV.map(n=>(
-              <div key={n.id} className={`nav-item ${page===n.id?"active":""}`} onClick={()=>{setPage(n.id);setSidebarOpen(false);}}>
-                <span className="icon">{n.icon}</span>{n.label}
-                {n.badge?<span className="nav-badge">{n.badge}</span>:null}
+                <div style={{flex:1}}><PBar pct={d.dt.length?Math.round(d.done/d.dt.length*100):0} color={d.isTod?"var(--a)":"var(--g)"} h={5}/></div>
+                <div style={{fontSize:9,color:"var(--t3)",width:36,textAlign:"left",flexShrink:0}}>{d.done}/{d.dt.length}</div>
               </div>
             ))}
           </div>
-          <div className="sidebar-footer">
-            <div className="user-card" onClick={logout} title="تسجيل الخروج">
-              <div className="user-avatar">{user.email?.[0]?.toUpperCase()||"م"}</div>
-              <div><div className="user-name" style={{fontSize:12}}>{user.email}</div><div className="user-role" style={{color:"var(--red)",fontSize:11}}>🚪 تسجيل خروج</div></div>
-            </div>
-          </div>
-        </nav>
-        <div className="main">
-          <div className="topbar">
-            <div><div className="topbar-title">{PAGE_TITLES[page]}</div><div className="topbar-date">{dateStr}</div></div>
-            <div className="topbar-actions">
-              <div className="btn-icon menu-btn" onClick={()=>setSidebarOpen(!sidebarOpen)}>☰</div>
-              {dbLoading&&<div className="spinner" style={{width:18,height:18}}/>}
-              <div className="btn-icon" onClick={()=>addNotif({type:"info",icon:"🔔",title:"لا إشعارات جديدة"})}>🔔</div>
-            </div>
-          </div>
-          {page==="dashboard"&&<DashboardPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} pomodoroSessions={pomodoroSessions} todayFocus={todayFocus} addNotif={addNotif}/>}
-          {page==="goals"&&<GoalsPage goals={goals} setGoals={setGoals} addNotif={addNotif}/>}
-          {page==="tasks"&&<TasksPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} addNotif={addNotif}/>}
-          {page==="pomodoro"&&<PomodoroPage onSession={onPomodoroSession} addNotif={addNotif} goals={goals}/>}
-          {page==="stats"&&<StatsPage tasks={tasks} goals={goals} pomodoroSessions={pomodoroSessions} todayFocus={todayFocus}/>}
-          {page==="ai"&&<AIPage tasks={tasks} goals={goals} addNotif={addNotif}/>}
         </div>
-      </div>
-      <Notification notifs={notifs}/>
-      {activeAlerts.length>0&&(
-        <div className="alert-banner">
-          {activeAlerts.map(a=>(
-            <div key={a.id} className={`alert-card ${a.isNow?"now":"warn"}`}>
-              <div style={{fontSize:24,flexShrink:0}}>{a.isNow?"⏰":"🔔"}</div>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:700,fontSize:13,color:"white"}}>{a.isNow?"حان وقت المهمة!":"تذكير — بعد 5 دقائق"}</div>
-                <div style={{fontSize:12,color:"rgba(255,255,255,0.85)",marginTop:2}}>{a.task.title}</div>
+        <div className="card">
+          <div className="sh"><div className="st">🎯 تقدم الأهداف</div><span style={{fontSize:10,color:"var(--t3)",background:"var(--bg3)",padding:"2px 7px",borderRadius:20}}>هذا الأسبوع</span></div>
+          {gProg.length===0?<div className="empty"><div style={{fontSize:30,marginBottom:7}}>🎯</div><div style={{fontSize:12}}>لا أهداف نشطة</div></div>
+          :gProg.map(g=>(
+            <div key={g.id} style={{marginBottom:15}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <div style={{display:"flex",alignItems:"center",gap:7}}><div style={{width:8,height:8,borderRadius:"50%",background:g.color,flexShrink:0}}/><span style={{fontSize:12,fontWeight:600}}>{g.title}</span></div>
+                <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:12,color:g.color,fontWeight:800,fontFamily:"Tajawal"}}>{g.wp}%</span><span style={{fontSize:9,color:"var(--t3)"}}>/{g.progress}%</span></div>
               </div>
-              <div onClick={()=>setActiveAlerts(prev=>prev.filter(x=>x.id!==a.id))} style={{color:"rgba(255,255,255,0.7)",cursor:"pointer",fontSize:16,flexShrink:0}}>✕</div>
+              <PBar pct={g.wp} color={g.color} h={7}/>
+              <div style={{display:"flex",justifyContent:"space-between",marginTop:3}}>
+                <span style={{fontSize:9,color:"var(--t3)"}}>{g.wd}/{g.wt} مهمة</span>
+                <span style={{fontSize:9,color:"var(--t3)"}}>إجمالي {g.progress}%</span>
+              </div>
             </div>
           ))}
         </div>
-      )}
-    </>
+        <div style={{display:"flex",flexDirection:"column",gap:11}}>
+          <PrayerTracker/>
+          <div style={{background:"linear-gradient(135deg,rgba(124,110,240,.08),rgba(92,79,212,.04))",border:"1px solid rgba(124,110,240,.15)",borderRadius:13,padding:"13px 15px",flex:1}}>
+            <div style={{fontSize:34,color:"var(--a)",opacity:.15,lineHeight:1,fontFamily:"serif",marginBottom:-3}}>"</div>
+            <div style={{fontSize:12,lineHeight:1.85,color:"var(--t)",fontWeight:500}}>{quote}</div>
+            <div style={{fontSize:10,color:"var(--a2)",marginTop:9,fontWeight:700}}>✨ اقتباس اليوم</div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
+}
+// ── GOALS PAGE ───────────────────────────────────────────────
+function GoalsPage({goals,setGoals,tasks,addNotif,weekOffset}){
+  const [showAdd,setShowAdd]=useState(false);
+  const [editG,setEditG]=useState(null);
+  const [delG,setDelG]=useState(null);
+  const [exp,setExp]=useState(null);
+  const [aF,setAF]=useState({title:"",category:"",color:"#6366f1",status:"active",startDate:"",endDate:""});
+  const [eF,setEF]=useState({});
+  const [ns,setNs]=useState("");
+  const base=new Date();base.setDate(base.getDate()+weekOffset*7);
+  const ws=getWeekStart(base);const we=getWeekEnd(ws);
+
+  async function addGoal(){if(!aF.title.trim())return;const uid=(await supabase.auth.getUser()).data.user?.id;const{data}=await supabase.from("goals").insert({user_id:uid,title:aF.title,category:aF.category||"",progress:0,status:aF.status||"active",color:aF.color||"#6366f1",start_date:aF.startDate||"",end_date:aF.endDate||"",subtasks:[]}).select().single();if(data){setGoals(p=>[...p,{...data,subtasks:[]}]);addNotif({type:"success",icon:"🎯",title:"تم إنشاء الهدف",msg:data.title});}setShowAdd(false);setAF({title:"",category:"",color:"#6366f1",status:"active",startDate:"",endDate:""});}
+  async function saveEdit(){if(!eF.title?.trim())return;await supabase.from("goals").update({title:eF.title,category:eF.category,status:eF.status,color:eF.color,start_date:eF.startDate,end_date:eF.endDate}).eq("id",editG.id);setGoals(p=>p.map(g=>g.id===editG.id?{...g,...eF,start_date:eF.startDate,end_date:eF.endDate}:g));addNotif({type:"info",icon:"✏️",title:"تم التعديل"});setEditG(null);}
+  async function doDelete(){await supabase.from("goals").delete().eq("id",delG.id);setGoals(p=>p.filter(g=>g.id!==delG.id));addNotif({type:"warning",icon:"🗑️",title:"تم الحذف"});setDelG(null);}
+  async function toggleSub(gid,sid){const g=goals.find(x=>x.id===gid);if(!g)return;const upd=g.subtasks.map(s=>s.id===sid?{...s,done:!s.done}:s);const prog=upd.length?Math.round(upd.filter(s=>s.done).length/upd.length*100):g.progress;await supabase.from("goals").update({subtasks:upd,progress:prog}).eq("id",gid);setGoals(p=>p.map(x=>x.id===gid?{...x,subtasks:upd,progress:prog}:x));}
+  async function addSub(gid){if(!ns.trim())return;const g=goals.find(x=>x.id===gid);if(!g)return;const upd=[...(g.subtasks||[]),{id:Date.now(),title:ns,done:false}];await supabase.from("goals").update({subtasks:upd}).eq("id",gid);setGoals(p=>p.map(x=>x.id===gid?{...x,subtasks:upd}:x));setNs("");}
+  async function delSub(gid,sid){const g=goals.find(x=>x.id===gid);if(!g)return;const upd=g.subtasks.filter(s=>s.id!==sid);const prog=upd.length?Math.round(upd.filter(s=>s.done).length/upd.length*100):g.progress;await supabase.from("goals").update({subtasks:upd,progress:prog}).eq("id",gid);setGoals(p=>p.map(x=>x.id===gid?{...x,subtasks:upd,progress:prog}:x));}
+
+  const GF=({form,setForm})=>(<>
+    <div style={{marginBottom:12}}><label className="fl">عنوان الهدف *</label><input className="fi" value={form.title||""} onChange={e=>setForm(p=>({...p,title:e.target.value}))} placeholder="مثال: قراءة 12 كتاب"/></div>
+    <div className="fr"><div style={{marginBottom:12}}><label className="fl">الفئة</label><input className="fi" value={form.category||""} onChange={e=>setForm(p=>({...p,category:e.target.value}))} placeholder="تعليم، صحة..."/></div><div style={{marginBottom:12}}><label className="fl">الحالة</label><select className="fs" value={form.status||"active"} onChange={e=>setForm(p=>({...p,status:e.target.value}))}><option value="active">نشط</option><option value="paused">متوقف</option><option value="done">مكتمل</option></select></div></div>
+    <div className="fr"><div style={{marginBottom:12}}><label className="fl">البداية</label><input type="date" className="fi" value={form.startDate||""} onChange={e=>setForm(p=>({...p,startDate:e.target.value}))}/></div><div style={{marginBottom:12}}><label className="fl">النهاية</label><input type="date" className="fi" value={form.endDate||""} onChange={e=>setForm(p=>({...p,endDate:e.target.value}))}/></div></div>
+    <div style={{marginBottom:12}}><label className="fl">اللون</label><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{COLORS.map(c=><div key={c} onClick={()=>setForm(p=>({...p,color:c}))} style={{width:24,height:24,borderRadius:6,background:c,cursor:"pointer",border:(form.color||"#6366f1")===c?"3px solid white":"2px solid transparent",transition:"all .15s"}}/>)}</div></div>
+  </>);
+
+  return(<div className="page">
+    <div className="sh"><div className="st">🎯 الأهداف</div><button className="btn bp bsm" onClick={()=>setShowAdd(true)}>+ هدف جديد</button></div>
+    <div className="g4" style={{marginBottom:14}}>
+      {[["🔥","active","نشطة"],["✅","done","مكتملة"],["⏸️","paused","متوقفة"]].map(([ic,s,l])=><div key={s} className="sm"><span style={{fontSize:20}}>{ic}</span><div><div style={{fontSize:19,fontWeight:900,fontFamily:"Tajawal",lineHeight:1}}>{goals.filter(g=>g.status===s).length}</div><div style={{fontSize:9,color:"var(--t2)",marginTop:2}}>أهداف {l}</div></div></div>)}
+      <div className="sm"><span style={{fontSize:20}}>📊</span><div><div style={{fontSize:19,fontWeight:900,fontFamily:"Tajawal",lineHeight:1}}>{goals.length?Math.round(goals.reduce((a,g)=>a+g.progress,0)/goals.length):0}%</div><div style={{fontSize:9,color:"var(--t2)",marginTop:2}}>متوسط التقدم</div></div></div>
+    </div>
+    {goals.length===0&&<div className="empty card"><div style={{fontSize:34,marginBottom:8}}>🎯</div><div style={{fontSize:13}}>لا أهداف بعد</div></div>}
+    {goals.map(g=>{
+      const wt=tasks.filter(t=>{const d=new Date(t.date+"T00:00:00");return String(t.goalId||t.goal_id)===String(g.id)&&d>=ws&&d<=we;});
+      const wd=wt.filter(t=>t.done);const wp=wt.length?Math.round(wd.length/wt.length*100):0;
+      const isExp=exp===g.id;
+      return(<div key={g.id} className="gc" style={{borderRight:`4px solid ${g.color}`}}>
+        <div style={{padding:"13px 15px",cursor:"pointer"}} onClick={()=>setExp(isExp?null:g.id)}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+            <div style={{flex:1}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                <span style={{fontSize:14,fontWeight:700}}>{g.title}</span>
+                <span style={{fontSize:9,padding:"2px 7px",borderRadius:18,fontWeight:700,background:g.status==="active"?"rgba(16,185,129,.12)":g.status==="done"?"rgba(59,130,246,.12)":"rgba(245,158,11,.12)",color:g.status==="active"?"var(--g)":g.status==="done"?"var(--b)":"var(--am)"}}>{g.status==="active"?"نشط":g.status==="done"?"مكتمل":"متوقف"}</span>
+                {g.category&&<span style={{fontSize:9,color:"var(--t3)"}}>{g.category}</span>}
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:5}}><span style={{fontSize:10,color:"var(--t2)",flexShrink:0}}>الإجمالي</span><div style={{flex:1,maxWidth:150}}><PBar pct={g.progress} color={g.color} h={5}/></div><span style={{fontSize:12,color:g.color,fontWeight:800,fontFamily:"Tajawal"}}>{g.progress}%</span></div>
+              <div style={{display:"flex",alignItems:"center",gap:9}}><span style={{fontSize:10,color:"var(--t2)",flexShrink:0}}>هذا الأسبوع</span><div style={{flex:1,maxWidth:150}}><PBar pct={wp} color={`${g.color}90`} h={4}/></div><span style={{fontSize:10,color:"var(--t3)"}}>{wd.length}/{wt.length} ({wp}%)</span></div>
+            </div>
+            <div style={{display:"flex",gap:5,alignItems:"center",flexShrink:0,marginRight:8}}>
+              <button className="ib" style={{width:27,height:27,fontSize:12}} onClick={e=>{e.stopPropagation();setEF({title:g.title,category:g.category||"",color:g.color,status:g.status,startDate:g.start_date||"",endDate:g.end_date||""});setEditG(g);}}>✏️</button>
+              <button className="ib" style={{width:27,height:27,fontSize:12,color:"var(--r)"}} onClick={e=>{e.stopPropagation();setDelG(g);}}>🗑️</button>
+              <span style={{fontSize:11,color:"var(--t3)",width:14,textAlign:"center"}}>{isExp?"▲":"▼"}</span>
+            </div>
+          </div>
+        </div>
+        {isExp&&(<div style={{padding:"0 15px 13px",borderTop:"1px solid var(--brd)"}}>
+          <div style={{fontSize:11,color:"var(--t2)",margin:"10px 0 7px",fontWeight:600}}>المهام الفرعية</div>
+          {(!g.subtasks||!g.subtasks.length)&&<div style={{fontSize:11,color:"var(--t3)",marginBottom:7}}>لا مهام فرعية.</div>}
+          {(g.subtasks||[]).map(s=><div key={s.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid var(--brd)"}}>
+            <div className="cb" onClick={()=>toggleSub(g.id,s.id)} style={{borderColor:s.done?"var(--g)":g.color,background:s.done?"var(--g)":"transparent",width:16,height:16}}>{s.done?"✓":""}</div>
+            <span style={{flex:1,fontSize:12,textDecoration:s.done?"line-through":"none",color:s.done?"var(--t3)":"var(--t)"}}>{s.title}</span>
+            <button onClick={()=>delSub(g.id,s.id)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--t3)",fontSize:12}}>✕</button>
+          </div>)}
+          <div style={{display:"flex",gap:6,marginTop:9}}>
+            <input className="fi" style={{flex:1,padding:"6px 9px",fontSize:12}} placeholder="مهمة فرعية..." value={ns} onChange={e=>setNs(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addSub(g.id)}/>
+            <button className="btn bp bsm" onClick={()=>addSub(g.id)}>+</button>
+          </div>
+        </div>)}
+      </div>);
+    })}
+    <Modal open={showAdd} onClose={()=>setShowAdd(false)} title="إنشاء هدف جديد" icon="🎯"><GF form={aF} setForm={setAF}/><div style={{display:"flex",gap:7,justifyContent:"flex-end",marginTop:14}}><button className="btn bg" onClick={()=>setShowAdd(false)}>إلغاء</button><button className="btn bp" onClick={addGoal}>إنشاء ✨</button></div></Modal>
+    <Modal open={!!editG} onClose={()=>setEditG(null)} title="تعديل الهدف" icon="✏️"><GF form={eF} setForm={setEF}/><div style={{display:"flex",gap:7,justifyContent:"flex-end",marginTop:14}}><button className="btn bg" onClick={()=>setEditG(null)}>إلغاء</button><button className="btn bp" onClick={saveEdit}>حفظ ✅</button></div></Modal>
+    <Confirm open={!!delG} onClose={()=>setDelG(null)} onOk={doDelete} title="حذف الهدف" msg={`حذف "${delG?.title}"؟`}/>
+  </div>);
+}
+// ── TASKS PAGE ───────────────────────────────────────────────
+function TasksPage({tasks,setTasks,goals,setGoals,addNotif}){
+  const [filter,setFilter]=useState("today");
+  const [showAdd,setShowAdd]=useState(false);
+  const [editT,setEditT]=useState(null);
+  const [delT,setDelT]=useState(null);
+  const today=toDay();
+  const [aF,setAF]=useState({title:"",goalId:"",priority:"medium",date:today,repeat:"none",note:"",time:"",weekDays:[]});
+  const [eF,setEF]=useState({});
+
+  async function addTask(){
+    if(!aF.title.trim())return;
+    const uid=(await supabase.auth.getUser()).data.user?.id;
+    const{data,error}=await supabase.from("tasks").insert({user_id:uid,title:aF.title,priority:aF.priority,date:aF.date,done:false,completed_at:null,repeat:aF.repeat||"none",goal_id:aF.goalId||null,note:aF.note||null,time:aF.time||null,week_days:aF.weekDays?.length?aF.weekDays:null}).select().single();
+    if(data){setTasks(p=>[...p,{...data,completedAt:null,goalId:data.goal_id,weekDays:data.week_days}]);addNotif({type:"success",icon:"✅",title:"تم الإضافة",msg:data.title});}
+    else addNotif({type:"warning",icon:"⚠️",title:"خطأ",msg:error?.message});
+    setShowAdd(false);setAF({title:"",goalId:"",priority:"medium",date:today,repeat:"none",note:"",time:"",weekDays:[]});
+  }
+
+  async function saveEdit(){
+    if(!eF.title?.trim())return;
+    await supabase.from("tasks").update({title:eF.title,priority:eF.priority,date:eF.date,repeat:eF.repeat||"none",goal_id:eF.goalId||null,note:eF.note||null,time:eF.time||null,week_days:eF.weekDays?.length?eF.weekDays:null}).eq("id",editT.id);
+    setTasks(p=>p.map(t=>t.id===editT.id?{...t,...eF,goalId:eF.goalId||null,weekDays:eF.weekDays}:t));
+    addNotif({type:"info",icon:"✏️",title:"تم التعديل"});setEditT(null);
+  }
+
+  async function doDelete(){await supabase.from("tasks").delete().eq("id",delT.id);setTasks(p=>p.filter(t=>t.id!==delT.id));addNotif({type:"warning",icon:"🗑️",title:"تم الحذف"});setDelT(null);}
+
+  async function toggle(id){
+    const task=tasks.find(t=>t.id===id);if(!task)return;
+    const done=!task.done;const now=new Date();
+    const ca=done?`${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}`:null;
+    await supabase.from("tasks").update({done,completed_at:ca}).eq("id",id);
+    const upd=tasks.map(t=>t.id===id?{...t,done,completedAt:ca}:t);setTasks(upd);
+    if(done){
+      addNotif({type:"success",icon:"🎉",title:"أحسنت!",msg:task.title});
+      const gid=task.goalId||task.goal_id;
+      if(gid){const g=goals.find(x=>x.id===gid);if(g){const gt=upd.filter(t=>(t.goalId||t.goal_id)===gid);const p=gt.length?Math.round(gt.filter(t=>t.done).length/gt.length*100):0;const np=Math.min(100,Math.max(g.progress,p));await supabase.from("goals").update({progress:np}).eq("id",gid);setGoals(prev=>prev.map(x=>x.id===gid?{...x,progress:np}:x));}}
+      if(task.repeat&&task.repeat!=="none"){
+        const uid=(await supabase.auth.getUser()).data.user?.id;
+        const nd=getNextRepeat(today,task.repeat);
+        const{data:ex}=await supabase.from("tasks").select("id").eq("user_id",uid).eq("title",task.title).eq("date",nd).eq("done",false).limit(1);
+        if(!ex||!ex.length){const{data:nx}=await supabase.from("tasks").insert({user_id:uid,title:task.title,priority:task.priority,date:nd,done:false,completed_at:null,repeat:task.repeat,goal_id:task.goalId||task.goal_id||null,time:task.time||null,week_days:task.weekDays||null,note:task.note||null}).select().single();if(nx){setTasks(p=>[...p,{...nx,completedAt:null,goalId:nx.goal_id,weekDays:nx.week_days}]);addNotif({type:"info",icon:"🔁",title:"تم جدولة التكرار",msg:nd});}}
+      }
+    }
+  }
+
+  async function reschedule(id){const t=new Date();t.setDate(t.getDate()+1);const nd=t.toISOString().split("T")[0];await supabase.from("tasks").update({date:nd}).eq("id",id);setTasks(p=>p.map(t=>t.id===id?{...t,date:nd}:t));addNotif({type:"info",icon:"📅",title:"غداً ✅"});}
+
+  const ovCount=tasks.filter(t=>!t.done&&t.date<today).length;
+  const filtered=tasks.filter(t=>{
+    if(filter==="today") return t.date===today;
+    if(filter==="week")  return isThisWeek(t.date,0);
+    if(filter==="overdue") return !t.done&&t.date<today;
+    if(filter==="done")  return t.done;
+    if(filter==="high")  return t.priority==="high";
+    return true;
+  }).sort((a,b)=>(a.done?1:-1)||({"high":0,"medium":1,"low":2}[a.priority]??1)-({"high":0,"medium":1,"low":2}[b.priority]??1));
+
+  const TF=({form,setForm})=>(<>
+    <div style={{marginBottom:11}}><label className="fl">عنوان المهمة *</label><input className="fi" value={form.title||""} onChange={e=>setForm(p=>({...p,title:e.target.value}))} placeholder="ما الذي تريد إنجازه؟"/></div>
+    <div className="fr"><div style={{marginBottom:11}}><label className="fl">الأولوية</label><select className="fs" value={form.priority||"medium"} onChange={e=>setForm(p=>({...p,priority:e.target.value}))}><option value="high">🔴 عالية</option><option value="medium">🟡 متوسطة</option><option value="low">🔵 منخفضة</option></select></div><div style={{marginBottom:11}}><label className="fl">التاريخ</label><input type="date" className="fi" value={form.date||today} onChange={e=>setForm(p=>({...p,date:e.target.value}))}/></div></div>
+    <div className="fr"><div style={{marginBottom:11}}><label className="fl">⏰ وقت التذكير</label><input type="time" className="fi" value={form.time||""} onChange={e=>setForm(p=>({...p,time:e.target.value}))}/></div><div style={{marginBottom:11}}><label className="fl">🔁 التكرار</label><select className="fs" value={form.repeat||"none"} onChange={e=>setForm(p=>({...p,repeat:e.target.value,weekDays:[]}))}><option value="none">لا تكرار</option><option value="daily">🔁 يومي</option><option value="weekly">📆 أسبوعي</option><option value="monthly">🗓️ شهري</option></select></div></div>
+    {form.repeat==="weekly"&&<div style={{marginBottom:11}}><label className="fl">أيام الأسبوع</label><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{WD.map((d,i)=>{const s=(form.weekDays||[]).includes(i);return<div key={i} onClick={()=>setForm(p=>({...p,weekDays:s?p.weekDays.filter(x=>x!==i):[...(p.weekDays||[]),i]}))} style={{padding:"4px 9px",borderRadius:17,fontSize:11,fontWeight:600,cursor:"pointer",background:s?"var(--a)":"var(--bg3)",border:`1px solid ${s?"var(--a)":"var(--brd)"}`,color:s?"white":"var(--t2)",transition:"all .15s"}}>{d}</div>;})}  </div></div>}
+    <div style={{marginBottom:11}}><label className="fl">ربط بهدف</label><select className="fs" value={form.goalId||""} onChange={e=>setForm(p=>({...p,goalId:e.target.value}))}><option value="">بدون هدف</option>{goals.map(g=><option key={g.id} value={g.id}>{g.title}</option>)}</select></div>
+    <div style={{marginBottom:4}}><label className="fl">📝 ملاحظات</label><textarea className="fta" value={form.note||""} onChange={e=>setForm(p=>({...p,note:e.target.value}))} placeholder="اختياري..." style={{minHeight:55}}/></div>
+  </>);
+
+  return(<div className="page">
+    <div className="sh"><div className="st">📋 المهام</div><button className="btn bp bsm" onClick={()=>setShowAdd(true)}>+ مهمة جديدة</button></div>
+    <div style={{display:"flex",gap:4,background:"var(--bg3)",borderRadius:9,padding:3,marginBottom:14,flexWrap:"wrap"}}>
+      {[["today","اليوم",null],["week","الأسبوع",null],["overdue","متأخرة",ovCount||null],["done","مكتملة",null],["high","عالية",null],["all","الكل",null]].map(([v,l,b])=>(
+        <div key={v} onClick={()=>setFilter(v)} style={{flex:1,minWidth:55,textAlign:"center",padding:"6px 7px",borderRadius:7,fontSize:11,fontWeight:600,cursor:"pointer",transition:"all .15s",background:filter===v?"var(--a)":"transparent",color:filter===v?"white":"var(--t2)",display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+          {l}{b?<span style={{background:"var(--r)",color:"white",fontSize:9,padding:"1px 4px",borderRadius:18}}>{b}</span>:null}
+        </div>
+      ))}
+    </div>
+    {filtered.length===0?<div className="empty card"><div style={{fontSize:32,marginBottom:7}}>✨</div><div style={{fontSize:13}}>لا مهام هنا</div></div>
+    :filtered.map(t=>{
+      const g=goals.find(x=>String(x.id)===String(t.goalId||t.goal_id));
+      const pc=t.priority==="high"?"var(--r)":t.priority==="medium"?"var(--am)":"var(--b)";
+      const ov=!t.done&&t.date<today;
+      return(<div key={t.id} className={`tc ${t.done?"dn":""} ${ov?"ov":""}`} style={{borderRight:`3px solid ${pc}`}}>
+        <div style={{display:"flex",alignItems:"flex-start",gap:9}}>
+          <div className="cb" onClick={()=>toggle(t.id)} style={{borderColor:t.done?"var(--g)":pc,background:t.done?"var(--g)":"transparent"}}>{t.done?"✓":""}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:6,marginBottom:4}}>
+              <div style={{fontSize:13,fontWeight:600,textDecoration:t.done?"line-through":"none",color:t.done?"var(--t3)":"var(--t)"}}>{t.title}</div>
+              {t.time&&<span className="bdg" style={{background:"rgba(245,158,11,.1)",color:"var(--am)",flexShrink:0}}>⏰{t.time}</span>}
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+              <span className="bdg" style={{background:t.priority==="high"?"rgba(239,68,68,.1)":t.priority==="medium"?"rgba(245,158,11,.1)":"rgba(59,130,246,.1)",color:pc}}>{t.priority==="high"?"🔴 عالية":t.priority==="medium"?"🟡 متوسطة":"🔵 منخفضة"}</span>
+              {g&&<span className="bdg" style={{background:`${g.color}18`,color:g.color}}>🎯{g.title}</span>}
+              <span className="bdg" style={{background:"var(--bg4)",color:"var(--t3)"}}>📅{t.date}</span>
+              {t.repeat&&t.repeat!=="none"&&<span className="bdg" style={{background:"rgba(124,110,240,.1)",color:"var(--a2)"}}>{t.repeat==="daily"?"🔁 يومي":t.repeat==="weekly"?"📆 أسبوعي":"🗓️ شهري"}</span>}
+              {ov&&<span className="bdg" style={{background:"rgba(239,68,68,.1)",color:"var(--r)"}}>⚠️ متأخرة</span>}
+              {t.done&&t.completedAt&&<span className="bdg" style={{background:"rgba(16,185,129,.1)",color:"var(--g)"}}>✅{t.completedAt}</span>}
+            </div>
+            {t.note&&<div style={{marginTop:5,padding:"4px 8px",background:"var(--bg4)",borderRadius:6,borderRight:"2px solid var(--a3)",fontSize:11,color:"var(--t2)"}}>📝{t.note}</div>}
+          </div>
+          <div style={{display:"flex",gap:3,flexShrink:0}}>
+            {!t.done&&<button className="ib" style={{width:27,height:27,fontSize:12}} onClick={()=>reschedule(t.id)} title="غداً">📅</button>}
+            <button className="ib" style={{width:27,height:27,fontSize:12}} onClick={()=>{setEF({title:t.title,goalId:t.goalId?String(t.goalId):"",priority:t.priority,date:t.date,repeat:t.repeat||"none",note:t.note||"",time:t.time||"",weekDays:t.weekDays||[]});setEditT(t);}}>✏️</button>
+            <button className="ib" style={{width:27,height:27,fontSize:12,color:"var(--r)"}} onClick={()=>setDelT(t)}>🗑️</button>
+          </div>
+        </div>
+      </div>);
+    })}
+    <Modal open={showAdd} onClose={()=>setShowAdd(false)} title="مهمة جديدة" icon="✅"><TF form={aF} setForm={setAF}/><div style={{display:"flex",gap:7,justifyContent:"flex-end",marginTop:12}}><button className="btn bg" onClick={()=>setShowAdd(false)}>إلغاء</button><button className="btn bp" onClick={addTask}>إضافة</button></div></Modal>
+    <Modal open={!!editT} onClose={()=>setEditT(null)} title="تعديل المهمة" icon="✏️"><TF form={eF} setForm={setEF}/><div style={{display:"flex",gap:7,justifyContent:"flex-end",marginTop:12}}><button className="btn bg" onClick={()=>setEditT(null)}>إلغاء</button><button className="btn bp" onClick={saveEdit}>حفظ ✅</button></div></Modal>
+    <Confirm open={!!delT} onClose={()=>setDelT(null)} onOk={doDelete} title="حذف المهمة" msg={`حذف "${delT?.title}"؟`}/>
+  </div>);
+}
+// ── POMODORO ─────────────────────────────────────────────────
+function PomodoroPage({onSession,addNotif,goals}){
+  const load=()=>{try{return JSON.parse(localStorage.getItem(POMO_KEY));}catch{return null;}};
+  const sv=load();
+  const getR=()=>{const s=load();if(s?.isRunning&&s?.startedAt){const el=Math.floor((Date.now()-s.startedAt)/1000);const tot=(s.phase==="work"?s.workMin:s.breakMin)*60;return Math.max(0,tot-el);}return(sv?.workMin||25)*60;};
+  const [wMin,setWMin]=useState(sv?.workMin||25);
+  const [bMin,setBMin]=useState(sv?.breakMin||5);
+  const [phase,setPhase]=useState(sv?.phase||"work");
+  const [sess,setSess]=useState(sv?.sessions||0);
+  const [selG,setSelG]=useState(sv?.selGoal||null);
+  const [showPick,setShowPick]=useState(false);
+  const [secs,setSecs]=useState(getR);
+  const [running,setRunning]=useState(()=>{const s=sv;if(s?.isRunning&&s?.startedAt){const el=Math.floor((Date.now()-s.startedAt)/1000);const tot=(s.phase==="work"?s.workMin:s.breakMin)*60;return el<tot;}return false;});
+  const [log,setLog]=useState(()=>{try{return JSON.parse(localStorage.getItem("injaz-pomo-log"))||[];}catch{return [];}});
+  const iv=useRef(null);
+  const tot=phase==="work"?wMin*60:bMin*60;
+  const save=(patch={})=>{const s=load()||{};localStorage.setItem(POMO_KEY,JSON.stringify({...s,workMin:wMin,breakMin:bMin,phase,sessions:sess,secs,isRunning:running,selGoal:selG,...patch}));};
+
+  useEffect(()=>{
+    if(!running)return;
+    const s=load()||{};if(!s.startedAt)save({isRunning:true,startedAt:Date.now()});
+    function tick(){const st=load()||{};if(!st.startedAt)return;const el=Math.floor((Date.now()-st.startedAt)/1000);const t=(st.phase==="work"?st.workMin:st.breakMin)*60;const rem=Math.max(0,t-el);setSecs(rem);
+      if(rem<=0){clearInterval(iv.current);setRunning(false);
+        if(st.phase==="work"){const ns=(st.sessions||0)+1;setSess(ns);addNotif({type:"success",icon:"🍅",title:"انتهت الجلسة!",msg:st.selGoal?.title||""});onSession(st.workMin);
+          const nl=[{id:Date.now(),goalTitle:st.selGoal?.title||"بدون هدف",goalColor:st.selGoal?.color,mins:st.workMin,date:new Date().toLocaleDateString("ar-EG",{day:"numeric",month:"short"}),time:new Date().toLocaleTimeString("ar",{hour:"2-digit",minute:"2-digit"})},...(()=>{try{return JSON.parse(localStorage.getItem("injaz-pomo-log"))||[];}catch{return [];}})().slice(0,29)];
+          localStorage.setItem("injaz-pomo-log",JSON.stringify(nl));setLog(nl);
+          setPhase("break");setSecs(st.breakMin*60);localStorage.setItem(POMO_KEY,JSON.stringify({...st,phase:"break",sessions:ns,secs:st.breakMin*60,startedAt:Date.now(),isRunning:true}));
+        }else{addNotif({type:"info",icon:"💪",title:"انتهت الاستراحة!"});setPhase("work");setSecs(st.workMin*60);localStorage.setItem(POMO_KEY,JSON.stringify({...st,phase:"work",secs:st.workMin*60,startedAt:Date.now(),isRunning:true}));}
+      }
+    }
+    iv.current=setInterval(tick,500);tick();return()=>clearInterval(iv.current);
+  },[running]);
+
+  useEffect(()=>{function onV(){if(document.visibilityState!=="visible")return;const s=load();if(s?.isRunning&&s?.startedAt){const el=Math.floor((Date.now()-s.startedAt)/1000);const t=(s.phase==="work"?s.workMin:s.breakMin)*60;setSecs(Math.max(0,t-el));}}document.addEventListener("visibilitychange",onV);return()=>document.removeEventListener("visibilitychange",onV);},[]);
+
+  const start=()=>{if(!selG){setShowPick(true);return;}save({isRunning:true,startedAt:Date.now()});setRunning(true);};
+  const pause=()=>{clearInterval(iv.current);setRunning(false);save({isRunning:false,startedAt:null,secs});};
+  const reset=()=>{clearInterval(iv.current);setRunning(false);setPhase("work");setSecs(wMin*60);save({isRunning:false,startedAt:null,phase:"work",secs:wMin*60});};
+
+  const m=Math.floor(secs/60).toString().padStart(2,"0");const s2=(secs%60).toString().padStart(2,"0");
+  const circ=2*Math.PI*78;const doff=circ-(circ*(1-secs/tot));const sc=phase==="work"?"var(--a)":"var(--g)";
+
+  return(<div className="page">
+    <div className="st" style={{justifyContent:"center",fontSize:17,marginBottom:18}}>🍅 مؤقت بومودورو</div>
+    {showPick&&<div className="ov-lay" onClick={()=>setShowPick(false)}><div className="modal" style={{maxWidth:360}} onClick={e=>e.stopPropagation()}><div style={{fontSize:15,fontWeight:700,marginBottom:14}}>🎯 اختر هدف الجلسة</div>{goals.filter(g=>g.status==="active").map(g=><div key={g.id} onClick={()=>{setSelG(g);setShowPick(false);save({selGoal:g,isRunning:true,startedAt:Date.now()});setRunning(true);}} style={{display:"flex",alignItems:"center",gap:9,padding:"10px 13px",borderRadius:9,cursor:"pointer",background:"var(--bg3)",border:"1px solid var(--brd)",marginBottom:6,transition:"all .15s"}} onMouseEnter={e=>e.currentTarget.style.borderColor=g.color} onMouseLeave={e=>e.currentTarget.style.borderColor="var(--brd)"}><div style={{width:9,height:9,borderRadius:"50%",background:g.color,flexShrink:0}}/><div><div style={{fontSize:13,fontWeight:600}}>{g.title}</div><div style={{fontSize:10,color:"var(--t2)"}}>{g.progress}%</div></div></div>)}<button className="btn bg" style={{width:"100%",justifyContent:"center",marginTop:4}} onClick={()=>setShowPick(false)}>إلغاء</button></div></div>}
+    <div className="g2" style={{maxWidth:780,margin:"0 auto"}}>
+      <div className="card" style={{textAlign:"center"}}>
+        {selG?<div style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 11px",borderRadius:17,background:`${selG.color}14`,border:`1px solid ${selG.color}30`,marginBottom:13,cursor:"pointer"}} onClick={()=>!running&&setShowPick(true)}><div style={{width:7,height:7,borderRadius:"50%",background:selG.color}}/><span style={{fontSize:11,fontWeight:600,color:selG.color}}>{selG.title}</span>{!running&&<span style={{fontSize:9,color:"var(--t3)"}}>✎</span>}</div>:<div style={{fontSize:11,color:"var(--t3)",marginBottom:13}}>اختر هدفاً للبدء ▶</div>}
+        <div style={{display:"flex",justifyContent:"center",gap:4,marginBottom:14}}>{[["work","عمل",sc],["break","راحة","var(--g)"]].map(([p,l,c])=><div key={p} onClick={()=>!running&&(setPhase(p),setSecs(p==="work"?wMin*60:bMin*60))} style={{padding:"5px 14px",borderRadius:7,fontSize:11,fontWeight:600,cursor:"pointer",background:phase===p?c:"var(--bg3)",color:phase===p?"white":"var(--t2)",border:`1px solid ${phase===p?c:"var(--brd)"}`,transition:"all .15s"}}>{l}</div>)}</div>
+        <div style={{position:"relative",width:168,height:168,margin:"0 auto 18px"}}><svg width="168" height="168" viewBox="0 0 168 168" style={{transform:"rotate(-90deg)"}}><circle cx="84" cy="84" r="78" fill="none" stroke="var(--bg4)" strokeWidth="7"/><circle cx="84" cy="84" r="78" fill="none" stroke={sc} strokeWidth="7" strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={doff} style={{filter:`drop-shadow(0 0 9px ${phase==="work"?"rgba(124,110,240,.5)":"rgba(16,185,129,.5)"})`}}/></svg><div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center"}}><div style={{fontFamily:"Tajawal",fontSize:38,fontWeight:900,color:sc,lineHeight:1}}>{m}:{s2}</div><div style={{fontSize:10,color:"var(--t2)",marginTop:3}}>{phase==="work"?"🎯 تركيز":"☕ راحة"}</div></div></div>
+        <div style={{display:"flex",justifyContent:"center",gap:9,marginBottom:14}}><button className="pomo-btn pomo-sec" onClick={reset}>↺</button><button className="pomo-btn pomo-main" onClick={running?pause:start}>{running?"⏸":"▶"}</button><button className="pomo-btn pomo-sec" onClick={()=>!running&&(setPhase(phase==="work"?"break":"work"),setSecs(phase==="work"?bMin*60:wMin*60))}>⏭</button></div>
+        <div style={{fontSize:10,color:"var(--t2)",marginBottom:7}}>جلسات: <strong style={{color:"var(--a2)"}}>{sess}</strong></div>
+        <div style={{display:"flex",justifyContent:"center",gap:5,marginBottom:14}}>{[...Array(8)].map((_,i)=><div key={i} className={`pdot ${i<sess?"on":""}`}/>)}</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{[["⏱️ عمل",wMin,setWMin],["☕ راحة",bMin,setBMin]].map(([l,v,setter])=><div key={l} style={{background:"var(--bg3)",border:"1px solid var(--brd)",borderRadius:8,padding:"8px",textAlign:"center"}}><div style={{fontSize:9,color:"var(--t2)",marginBottom:4}}>{l}</div><div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><div onClick={()=>!running&&setter(p=>Math.max(1,p-1))} style={{width:19,height:19,borderRadius:5,background:"var(--bg4)",border:"1px solid var(--brd)",cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--t2)"}}>−</div><div style={{fontSize:16,fontWeight:700,fontFamily:"Tajawal"}}>{v}</div><div onClick={()=>!running&&setter(p=>Math.min(90,p+1))} style={{width:19,height:19,borderRadius:5,background:"var(--bg4)",border:"1px solid var(--brd)",cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--t2)"}}>+</div></div></div>)}</div>
+      </div>
+      <div className="card"><div className="st" style={{marginBottom:13}}>📊 سجل الجلسات</div>
+        {log.length===0?<div className="empty"><div style={{fontSize:30,marginBottom:7}}>🍅</div><div style={{fontSize:12}}>لا جلسات بعد</div></div>
+        :<div style={{maxHeight:370,overflowY:"auto"}}>
+          {log.map((s,i)=><div key={s.id} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 9px",borderRadius:8,background:"var(--bg3)",border:"1px solid var(--brd)",marginBottom:6}}><div style={{width:30,height:30,borderRadius:7,background:s.goalColor?`${s.goalColor}18`:"var(--bg4)",border:`1px solid ${s.goalColor||"var(--brd)"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>🍅</div><div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:600,color:s.goalColor||"var(--t)"}}>{s.goalTitle}</div><div style={{fontSize:10,color:"var(--t2)"}}>{s.date} · {s.time} · {s.mins} دقيقة</div></div><div style={{fontSize:9,padding:"2px 6px",borderRadius:17,background:"rgba(124,110,240,.1)",color:"var(--a2)",fontWeight:700}}>#{log.length-i}</div></div>)}
+          <div style={{marginTop:9,padding:"9px 11px",background:"var(--bg3)",borderRadius:8,border:"1px solid var(--brd)"}}><div style={{fontSize:10,color:"var(--t2)",marginBottom:6,fontWeight:600}}>⏱️ إجمالي التركيز</div>{Object.entries(log.reduce((a,s)=>{const k=s.goalTitle||"بدون هدف";if(!a[k])a[k]={m:0,c:s.goalColor||"var(--t2)"};a[k].m+=s.mins;return a;},{})).map(([g,{m,c}])=><div key={g} style={{display:"flex",justifyContent:"space-between",marginBottom:2}}><span style={{fontSize:10,color:c}}>{g}</span><span style={{fontSize:10,fontWeight:700,color:c}}>{Math.floor(m/60)}س {m%60}د</span></div>)}</div>
+        </div>}
+      </div>
+    </div>
+  </div>);
+}
+
+// ── STATS ─────────────────────────────────────────────────────
+function StatsPage({tasks,goals}){
+  const today=toDay();
+  const wt=tasks.filter(t=>isThisWeek(t.date,0));
+  const weeks=Array.from({length:4},(_,i)=>{const base=new Date();base.setDate(base.getDate()-(3-i)*7);const ws=getWeekStart(base);const we=getWeekEnd(ws);const wts=tasks.filter(t=>{const d=new Date(t.date+"T00:00:00");return d>=ws&&d<=we;});const wd=wts.filter(t=>t.done);return{l:`أ${4-i}`,t:wts.length,d:wd.length,p:wts.length?Math.round(wd.length/wts.length*100):0};});
+  const maxT=Math.max(...weeks.map(w=>w.t),1);
+  return(<div className="page">
+    <div className="st" style={{fontSize:17,marginBottom:18}}>📊 الإحصائيات</div>
+    <div className="g4" style={{marginBottom:18}}>
+      {[{i:"✅",v:tasks.filter(t=>t.done).length,l:"مكتملة الكل",c:"var(--a)"},{i:"📅",v:`${wt.filter(t=>t.done).length}/${wt.length}`,l:"هذا الأسبوع",c:"var(--g)"},{i:"🎯",v:goals.filter(g=>g.status==="active").length,l:"أهداف نشطة",c:"var(--b)"},{i:"📈",v:(goals.length?Math.round(goals.reduce((a,g)=>a+g.progress,0)/goals.length):0)+"%",l:"متوسط الأهداف",c:"var(--am)"}].map((s,i)=><div key={i} className="sm"><span style={{fontSize:21}}>{s.i}</span><div><div style={{fontSize:18,fontWeight:900,fontFamily:"Tajawal",color:s.c,lineHeight:1}}>{s.v}</div><div style={{fontSize:9,color:"var(--t2)",marginTop:2}}>{s.l}</div></div></div>)}
+    </div>
+    <div className="g2">
+      <div className="card"><div className="st" style={{marginBottom:14}}>📆 آخر 4 أسابيع</div><div style={{display:"flex",alignItems:"flex-end",gap:11,height:110}}>{weeks.map((w,i)=><div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,height:"100%",justifyContent:"flex-end"}}><div style={{fontSize:9,color:"var(--t2)",fontWeight:600}}>{w.p}%</div><div style={{width:"100%",borderRadius:"4px 4px 0 0",background:"linear-gradient(180deg,var(--a),var(--a3))",height:`${Math.max(7,w.t/maxT*100)}%`,transition:"height .8s ease"}}/><div style={{fontSize:8,color:"var(--t3)"}}>{w.l}</div><div style={{fontSize:8,color:"var(--t2)"}}>{w.d}/{w.t}</div></div>)}</div></div>
+      <div className="card"><div className="st" style={{marginBottom:14}}>🎯 تقدم الأهداف</div>{goals.slice(0,6).map(g=><div key={g.id} style={{marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}><div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:7,height:7,borderRadius:"50%",background:g.color,flexShrink:0}}/><span style={{fontSize:12,fontWeight:600}}>{g.title}</span></div><span style={{fontSize:12,color:g.color,fontWeight:800,fontFamily:"Tajawal"}}>{g.progress}%</span></div><PBar pct={g.progress} color={g.color} h={6}/></div>)}</div>
+    </div>
+  </div>);
+}
+
+// ── AI ─────────────────────────────────────────────────────────
+function AIPage({tasks,goals}){
+  const [msgs,setMsgs]=useState([{role:"bot",text:"مرحباً! أنا مساعدك الذكي 🤖\n\nاسألني عن:\n• أفضل مهام اليوم\n• تحليل أسباب التأجيل\n• نصائح لتحسين الإنتاجية\n• مراجعة أدائك الأسبوعي"}]);
+  const [inp,setInp]=useState(""); const [load,setLoad]=useState(false); const bot=useRef(null);
+  useEffect(()=>bot.current?.scrollIntoView({behavior:"smooth"}),[msgs]);
+  const suggs=["ما أهم مهمة اليوم؟","حلل أسباب التأجيل","راجع أدائي هذا الأسبوع","كيف أحسن إنتاجيتي؟"];
+  async function send(){
+    if(!inp.trim()||load)return;
+    const um=inp.trim();setInp("");setMsgs(p=>[...p,{role:"user",text:um}]);setLoad(true);
+    const today=toDay();const tt=tasks.filter(t=>t.date===today);
+    const sys=`أنت مساعد إنتاجية ذكي باللغة العربية. المستخدم لديه:\n- ${tt.length} مهمة اليوم (${tt.filter(t=>t.done).length} مكتملة)\n- أهداف: ${goals.filter(g=>g.status==="active").map(g=>`${g.title}(${g.progress}%)`).join("،")}\nقدم نصائح عملية موجزة.`;
+    try{const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:700,system:sys,messages:[{role:"user",content:um}]})});const d=await r.json();setMsgs(p=>[...p,{role:"bot",text:d.content?.[0]?.text||"عذراً."}]);}
+    catch{setMsgs(p=>[...p,{role:"bot",text:"تعذر الاتصال."}]);}
+    setLoad(false);
+  }
+  return(<div className="page">
+    <div className="st" style={{fontSize:17,marginBottom:15}}>🤖 المساعد الذكي</div>
+    <div className="card" style={{marginBottom:12,padding:"12px 16px"}}><div style={{fontSize:11,color:"var(--t2)",marginBottom:8,fontWeight:600}}>💡 اقتراحات</div><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{suggs.map(s=><button key={s} className="btn bg bsm" onClick={()=>setInp(s)}>{s}</button>)}</div></div>
+    <div className="card" style={{display:"flex",flexDirection:"column",minHeight:380}}>
+      <div style={{flex:1,maxHeight:400,overflowY:"auto",display:"flex",flexDirection:"column",gap:10,padding:4}}>
+        {msgs.map((m,i)=><div key={i} style={{display:"flex",gap:10,flexDirection:m.role==="user"?"row-reverse":"row"}}><div style={{width:30,height:30,borderRadius:8,background:m.role==="bot"?"linear-gradient(135deg,var(--a),#06b6d4)":"var(--bg3)",border:m.role==="user"?"1px solid var(--brd)":"none",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>{m.role==="bot"?"🤖":"👤"}</div><div style={{padding:"10px 14px",borderRadius:m.role==="bot"?"10px 2px 10px 10px":"2px 10px 10px 10px",fontSize:13,lineHeight:1.7,maxWidth:"85%",background:m.role==="bot"?"var(--bg3)":"var(--a)",color:m.role==="user"?"white":"var(--t)",whiteSpace:"pre-line"}}>{m.text}</div></div>)}
+        {load&&<div style={{display:"flex",gap:10}}><div style={{width:30,height:30,borderRadius:8,background:"linear-gradient(135deg,var(--a),#06b6d4)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>🤖</div><div style={{padding:"10px 14px",borderRadius:"10px 2px 10px 10px",background:"var(--bg3)",display:"flex",gap:8,alignItems:"center"}}><div className="sp"/><span style={{fontSize:12,color:"var(--t2)"}}>يفكر...</span></div></div>}
+        <div ref={bot}/>
+      </div>
+      <div style={{borderTop:"1px solid var(--brd)",paddingTop:12,marginTop:8,display:"flex",gap:8}}>
+        <input className="ai-in" placeholder="اسألني..." value={inp} onChange={e=>setInp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&send()}/>
+        <button className="btn bp" onClick={send} disabled={load} style={{flexShrink:0}}>{load?<div className="sp"/>:"إرسال"}</button>
+      </div>
+    </div>
+  </div>);
+}
+// ── AUTH ──────────────────────────────────────────────────────
+function AuthPage({onAuth}){
+  const [mode,setMode]=useState("login");
+  const [email,setEmail]=useState("");
+  const [pass,setPass]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [err,setErr]=useState("");
+  async function submit(){
+    if(!email||!pass){setErr("أدخل البريد وكلمة المرور");return;}
+    setLoading(true);setErr("");
+    try{const r=mode==="login"?await supabase.auth.signInWithPassword({email,password:pass}):await supabase.auth.signUp({email,password:pass});if(r.error)setErr(r.error.message);else if(r.data?.user)onAuth(r.data.user);else if(mode==="signup"){setErr("تحقق من بريدك ثم سجّل دخول.");setMode("login");}}catch{setErr("خطأ، حاول مرة أخرى.");}
+    setLoading(false);
+  }
+  return(<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)",fontFamily:"'IBM Plex Sans Arabic',sans-serif",direction:"rtl"}}>
+    <style>{S}</style>
+    <div style={{width:"100%",maxWidth:370,padding:"0 18px"}}>
+      <div style={{textAlign:"center",marginBottom:26}}>
+        <div style={{width:54,height:54,background:"linear-gradient(135deg,var(--a),var(--a3))",borderRadius:15,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,margin:"0 auto 13px",boxShadow:"0 8px 26px rgba(124,110,240,.4)"}}>⚡</div>
+        <div style={{fontSize:25,fontWeight:900,fontFamily:"Tajawal",color:"var(--t)"}}>إنجاز</div>
+        <div style={{fontSize:11,color:"var(--t3)",marginTop:3}}>نظام إدارة حياتك الأسبوعي</div>
+      </div>
+      <div className="card" style={{padding:22}}>
+        <div style={{display:"flex",gap:4,background:"var(--bg3)",borderRadius:9,padding:3,marginBottom:18}}>
+          {[["login","دخول"],["signup","حساب جديد"]].map(([v,l])=><div key={v} onClick={()=>{setMode(v);setErr("");}} style={{flex:1,textAlign:"center",padding:"7px",borderRadius:7,fontSize:12,fontWeight:600,cursor:"pointer",background:mode===v?"var(--a)":"transparent",color:mode===v?"white":"var(--t2)",transition:"all .15s"}}>{l}</div>)}
+        </div>
+        <div style={{marginBottom:12}}><label className="fl">📧 البريد</label><input className="fi" type="email" placeholder="your@email.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}/></div>
+        <div style={{marginBottom:12}}><label className="fl">🔒 كلمة المرور</label><input className="fi" type="password" placeholder="••••••••" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}/></div>
+        {err&&<div style={{background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.25)",borderRadius:8,padding:"8px 11px",fontSize:12,color:"var(--r)",marginBottom:13}}>{err}</div>}
+        <button className="btn bp" onClick={submit} disabled={loading} style={{width:"100%",justifyContent:"center",height:41,fontSize:13}}>
+          {loading?<div className="sp"/>:mode==="login"?"🚀 دخول":"✨ إنشاء حساب"}
+        </button>
+      </div>
+    </div>
+  </div>);
+}
+
+// ── MAIN APP ──────────────────────────────────────────────────
+export default function App(){
+  const [page,setPage]=useState("week");
+  const [user,setUser]=useState(null);
+  const [authLoading,setAuthLoading]=useState(true);
+  const [dataLoaded,setDataLoaded]=useState(false);
+  const [goals,setGoals]=useState([]);
+  const [tasks,setTasks]=useState([]);
+  const [pomoSess,setPomoSess]=useState(0);
+  const [todayFocus,setTodayFocus]=useState(0);
+  const [notifs,setNotifs]=useState([]);
+  const [sidebarOpen,setSidebarOpen]=useState(false);
+  const [weekOffset,setWeekOffset]=useState(0);
+  const [dbLoading,setDbLoading]=useState(true);
+
+  useEffect(()=>{
+    supabase.auth.getSession().then(({data})=>{setUser(data.session?.user||null);setAuthLoading(false);});
+    const{data:l}=supabase.auth.onAuthStateChange((_e,s)=>setUser(s?.user||null));
+    return()=>l.subscription.unsubscribe();
+  },[]);
+
+  useEffect(()=>{if(user)load(user.id);else{setGoals([]);setTasks([]);}},[user]);
+
+  async function load(uid){
+    setDbLoading(true);setDataLoaded(false);setGoals([]);setTasks([]);
+    try{const [{data:gd},{data:td}]=await Promise.all([supabase.from("goals").select("*").eq("user_id",uid).order("created_at"),supabase.from("tasks").select("*").eq("user_id",uid).order("created_at")]);if(gd)setGoals(gd.map(g=>({...g,subtasks:g.subtasks||[]})));if(td)setTasks(td.map(t=>({...t,completedAt:t.completed_at,goalId:t.goal_id,note:t.note,time:t.time,weekDays:t.week_days||[]})));}catch(e){console.error(e);}
+    setDbLoading(false);setDataLoaded(true);
+  }
+
+  useEffect(()=>{
+    if(!user)return;
+    if("Notification"in window&&Notification.permission==="default")Notification.requestPermission();
+    function check(){
+      const now=new Date();const today=toDay();
+      const hh=now.getHours().toString().padStart(2,"0");const mm=now.getMinutes().toString().padStart(2,"0");const cur=`${hh}:${mm}`;
+      tasks.forEach(t=>{
+        if(t.done||t.date!==today||!t.time)return;
+        function snd(title,body,tag){if(sessionStorage.getItem(tag))return;sessionStorage.setItem(tag,"1");addNotif({type:"info",icon:"⏰",title,msg:body});if("Notification"in window&&Notification.permission==="granted")try{new Notification(title,{body,dir:"rtl",tag});}catch(e){}}
+        if(t.time===cur)snd("⏰ حان وقت المهمة!",t.title,`n-${t.id}-${today}-${cur}`);
+        else{try{const d=new Date(`${today}T${t.time}:00`);const diff=d-now;if(diff>0&&diff<=5*60*1000+59000)snd("🔔 بعد 5 دقائق",t.title,`w-${t.id}-${today}-${hh}:${mm}`);}catch(e){}}
+      });
+    }
+    const iv=setInterval(check,30000);check();return()=>clearInterval(iv);
+  },[user,tasks]);
+
+  function addNotif(n){const id=Date.now();setNotifs(p=>[...p,{...n,id}]);setTimeout(()=>setNotifs(p=>p.filter(x=>x.id!==id)),3500);}
+  function onPomoSession(mins){setPomoSess(p=>p+1);setTodayFocus(p=>p+mins/60);}
+  async function logout(){await supabase.auth.signOut();setUser(null);}
+
+  const today=new Date();
+  const ovCount=tasks.filter(t=>!t.done&&t.date<toDay()).length;
+  const todayCount=tasks.filter(t=>!t.done&&t.date===toDay()).length;
+  const base=new Date();base.setDate(base.getDate()+weekOffset*7);
+  const ws=getWeekStart(base);const we=getWeekEnd(ws);const wn=getWeekNumber(ws);
+
+  const NAV=[
+    {id:"week",  icon:"📅", label:"هذا الأسبوع"},
+    {id:"goals", icon:"🎯", label:"الأهداف"},
+    {id:"tasks", icon:"✅", label:"المهام", badge:ovCount||null},
+    {id:"pomodoro",icon:"🍅",label:"بومودورو"},
+    {id:"stats", icon:"📊", label:"الإحصائيات"},
+    {id:"ai",    icon:"🤖", label:"المساعد الذكي"},
+  ];
+  const TITLES={week:`الأسبوع ${wn}`,goals:"الأهداف",tasks:"المهام",pomodoro:"بومودورو",stats:"الإحصائيات",ai:"المساعد الذكي"};
+
+  const LS=()=>(<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)",flexDirection:"column",gap:14}}><style>{S}</style><div style={{fontSize:46}}>⚡</div><div className="sp" style={{width:20,height:20}}/><div style={{color:"var(--t3)",fontSize:12,fontFamily:"IBM Plex Sans Arabic"}}>جاري التحميل...</div></div>);
+
+  if(authLoading)return <LS/>;
+  if(!user)return <AuthPage onAuth={setUser}/>;
+  if(!dataLoaded)return <LS/>;
+
+  return(<>
+    <style>{S}</style>
+    <div className="shell">
+      <div className={`mob-ov ${sidebarOpen?"show":""}`} onClick={()=>setSidebarOpen(false)}/>
+      <nav className={`sidebar ${sidebarOpen?"open":""}`}>
+        <div className="logo">
+          <div className="logo-i">⚡</div>
+          <div><div className="logo-n">إنجاز</div><div className="logo-s">نظام أسبوعي</div></div>
+        </div>
+        <div className="nav">
+          {/* Week navigator */}
+          <div className="wbox">
+            <div style={{fontSize:11,color:"var(--a2)",fontWeight:700,marginBottom:3}}>الأسبوع {wn} {weekOffset===0?"📍":weekOffset<0?"↩️":"↪️"}</div>
+            <div style={{fontSize:10,color:"var(--t3)",marginBottom:9}}>{fmtDate(ws)} — {fmtDate(we)}</div>
+            <div style={{display:"flex",gap:4}}>
+              <div onClick={()=>setWeekOffset(p=>p-1)} style={{flex:1,padding:"5px",borderRadius:6,background:"var(--bg4)",border:"1px solid var(--brd)",cursor:"pointer",fontSize:14,textAlign:"center",color:"var(--t2)"}}>‹</div>
+              {weekOffset!==0&&<div onClick={()=>setWeekOffset(0)} style={{flex:1,padding:"5px",borderRadius:6,background:"var(--a)",border:"1px solid var(--a)",cursor:"pointer",fontSize:10,textAlign:"center",color:"white",fontWeight:700}}>اليوم</div>}
+              <div onClick={()=>setWeekOffset(p=>p+1)} style={{flex:1,padding:"5px",borderRadius:6,background:"var(--bg4)",border:"1px solid var(--brd)",cursor:"pointer",fontSize:14,textAlign:"center",color:"var(--t2)"}}>›</div>
+            </div>
+          </div>
+          {NAV.map(n=>(
+            <div key={n.id} className={`ni ${page===n.id?"active":""}`} onClick={()=>{setPage(n.id);setSidebarOpen(false);}}>
+              <span className="ni-ic">{n.icon}</span>{n.label}
+              {n.badge?<span className="ni-b">{n.badge}</span>:null}
+            </div>
+          ))}
+        </div>
+        <div className="sb-bot">
+          <div className="upill" onClick={logout} title="تسجيل خروج">
+            <div className="uav">{user.email?.[0]?.toUpperCase()||"م"}</div>
+            <div style={{overflow:"hidden"}}>
+              <div style={{fontSize:10,color:"var(--t2)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.email}</div>
+              <div style={{fontSize:9,color:"var(--r)"}}>🚪 تسجيل خروج</div>
+            </div>
+          </div>
+        </div>
+      </nav>
+      <div className="main">
+        <div className="topbar">
+          <div>
+            <div style={{fontSize:15,fontWeight:700,fontFamily:"Tajawal"}}>{TITLES[page]}</div>
+            <div style={{fontSize:10,color:"var(--t3)"}}>{today.toLocaleDateString("ar-EG",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
+          </div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <div className="ib menu-btn" onClick={()=>setSidebarOpen(!sidebarOpen)}>☰</div>
+            {dbLoading&&<div className="sp" style={{width:15,height:15}}/>}
+            {todayCount>0&&<div style={{fontSize:11,padding:"3px 9px",borderRadius:20,background:"rgba(124,110,240,.15)",color:"var(--a2)",fontWeight:700}}>📋{todayCount} اليوم</div>}
+            <div className="ib" onClick={()=>addNotif({type:"info",icon:"🔔",title:"لا إشعارات جديدة"})}>🔔</div>
+          </div>
+        </div>
+        {page==="week"     &&<ThisWeekPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} addNotif={addNotif} weekOffset={weekOffset}/>}
+        {page==="goals"    &&<GoalsPage goals={goals} setGoals={setGoals} tasks={tasks} addNotif={addNotif} weekOffset={weekOffset}/>}
+        {page==="tasks"    &&<TasksPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} addNotif={addNotif}/>}
+        {page==="pomodoro" &&<PomodoroPage onSession={onPomoSession} addNotif={addNotif} goals={goals}/>}
+        {page==="stats"    &&<StatsPage tasks={tasks} goals={goals}/>}
+        {page==="ai"       &&<AIPage tasks={tasks} goals={goals}/>}
+      </div>
+    </div>
+    <Notifs notifs={notifs}/>
+  </>);
 }
