@@ -1011,17 +1011,12 @@ export default function App(){
     await supabase.from("tasks").update({ done, completed_at: ca }).eq("id", id);
 
     if (done && task.repeat && task.repeat !== "none") {
-      // Step 1: show strikethrough
-      setTasks(prev => prev.map(t => t.id === id ? { ...t, done, completedAt: ca } : t));
-      addNotif({ type: "success", icon: "🎉", title: "أحسنت! ✅", msg: task.title });
-
-      // Step 2: create next occurrence
+      // Remove immediately + schedule next day
       const uid = (await supabase.auth.getUser()).data.user?.id;
       const nd  = getNextRepeat(today, task.repeat);
       const { data: ex } = await supabase.from("tasks").select("id")
         .eq("user_id", uid).eq("title", task.title).eq("date", nd).eq("done", false).limit(1);
 
-      let nextTask = null;
       if (!ex || !ex.length) {
         const { data: nx } = await supabase.from("tasks").insert({
           user_id: uid, title: task.title, priority: task.priority, date: nd,
@@ -1030,20 +1025,19 @@ export default function App(){
           time: task.time || null, week_days: task.weekDays || null, note: task.note || null
         }).select().single();
         if (nx) {
-          nextTask = { ...nx, completedAt: null, goalId: nx.goal_id, weekDays: nx.week_days };
+          // Remove current + add next in one update
+          setTasks(prev => [
+            ...prev.filter(t => t.id !== id),
+            { ...nx, completedAt: null, goalId: nx.goal_id, weekDays: nx.week_days }
+          ]);
+          addNotif({ type: "success", icon: "🎉", title: "أحسنت! ✅", msg: task.title });
           addNotif({ type: "info", icon: "🔁", title: "ستظهر غداً 📅", msg: nd });
+          return;
         }
       }
-
-      // Step 3: remove done task + add next (after 1.2s for strikethrough effect)
-      const taskId = id;
-      const next = nextTask;
-      setTimeout(() => {
-        setTasks(prev => {
-          const filtered = prev.filter(t => t.id !== taskId);
-          return next ? [...filtered, next] : filtered;
-        });
-      }, 1200);
+      // Already scheduled — just remove
+      setTasks(prev => prev.filter(t => t.id !== id));
+      addNotif({ type: "success", icon: "🎉", title: "أحسنت! ✅", msg: task.title });
       return;
     }
 
