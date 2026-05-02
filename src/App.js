@@ -162,7 +162,7 @@ function PrayerTracker(){
   );
 }
 // ── THIS WEEK PAGE ───────────────────────────────────────────
-function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset, onToggle}) {
+function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset, onToggle, dailyDone}) {
   const base = new Date(); base.setDate(base.getDate() + weekOffset * 7);
   const ws = getWeekStart(base);
   const we = getWeekEnd(ws);
@@ -199,14 +199,23 @@ function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset, o
   // So we DON'T reverse - RTL CSS handles it
   const displayDays = days; // RTL naturally puts Sat on right, Fri on left
 
-  // Tasks for selected day — show all, done tasks shown with strikethrough then removed
-  const selAllTasks  = tasks.filter(t => t.date === selDay);
-  const selDoneCount = selAllTasks.filter(t => t.done).length;
-  const selTasks = selAllTasks
-    .sort((a, b) => {
-      if (a.done !== b.done) return a.done ? 1 : -1; // pending first
-      return ({"high":0,"medium":1,"low":2}[a.priority]??1) - ({"high":0,"medium":1,"low":2}[b.priority]??1);
-    });
+  // Tasks for selected day
+  // Repeating tasks: show on their start date AND every day after
+  const selAllTasks = tasks.filter(t => {
+    if (t.date === selDay) return true; // exact date match
+    // Repeating tasks: show every day from their start date onwards
+    if (t.repeat && t.repeat !== "none" && t.date <= selDay) return true;
+    return false;
+  });
+  const selDoneCount = selAllTasks.filter(t =>
+    (t.repeat && t.repeat !== "none") ? (dailyDone?.ids||[]).includes(t.id) : t.done
+  ).length;
+  const selTasks = selAllTasks.sort((a, b) => {
+    const aDone = (a.repeat && a.repeat !== "none") ? (dailyDone?.ids||[]).includes(a.id) : a.done;
+    const bDone = (b.repeat && b.repeat !== "none") ? (dailyDone?.ids||[]).includes(b.id) : b.done;
+    if (aDone !== bDone) return aDone ? 1 : -1;
+    return ({"high":0,"medium":1,"low":2}[a.priority]??1) - ({"high":0,"medium":1,"low":2}[b.priority]??1);
+  });
 
   // Split: daily/one-time vs repeating tasks
   const dailyTasks     = selTasks.filter(t => !t.repeat || t.repeat === "none");
@@ -226,25 +235,34 @@ function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset, o
   function TaskCard({t}) {
     const g  = goals.find(x => String(x.id) === String(t.goalId || t.goal_id));
     const pc = t.priority === "high" ? "var(--r)" : t.priority === "medium" ? "var(--am)" : "var(--b)";
+    const isRepeat = t.repeat && t.repeat !== "none";
+    // For repeating tasks use dailyDone, for others use t.done
+    const isDone = isRepeat ? (dailyDone?.ids||[]).includes(t.id) : t.done;
+    const now = new Date();
+    const ca = `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}`;
+
     return (
       <div style={{
         display:"flex", alignItems:"flex-start", gap:12,
         padding:"12px 14px", borderRadius:11, marginBottom:7,
-        background: t.done ? "rgba(16,185,129,.04)" : "var(--bg3)",
-        border: `1px solid ${t.done ? "rgba(16,185,129,.15)" : "var(--brd)"}`,
-        borderRight: `4px solid ${t.done ? "var(--g)" : pc}`,
-        opacity: t.done ? 0.6 : 1, transition:"all .2s",
+        background: isDone ? "rgba(16,185,129,.05)" : "var(--bg3)",
+        border: `1px solid ${isDone ? "rgba(16,185,129,.2)" : "var(--brd)"}`,
+        borderRight: `4px solid ${isDone ? "var(--g)" : pc}`,
+        transition:"all .25s",
       }}>
         <div onClick={() => onToggle(t.id)} style={{
-          width:21, height:21, borderRadius:6, flexShrink:0, marginTop:2, cursor:"pointer",
-          border:`2px solid ${t.done ? "var(--g)" : pc}`,
-          background: t.done ? "var(--g)" : "transparent",
+          width:22, height:22, borderRadius:7, flexShrink:0, marginTop:1, cursor:"pointer",
+          border:`2px solid ${isDone ? "var(--g)" : pc}`,
+          background: isDone ? "var(--g)" : "transparent",
           display:"flex", alignItems:"center", justifyContent:"center",
-          color:"white", fontSize:11, fontWeight:700, transition:"all .2s",
-        }}>{t.done ? "✓" : ""}</div>
+          color:"white", fontSize:12, fontWeight:700, transition:"all .2s",
+        }}>{isDone ? "✓" : ""}</div>
         <div style={{flex:1, minWidth:0}}>
           <div style={{display:"flex", justifyContent:"space-between", gap:8, marginBottom:5}}>
-            <div style={{fontSize:13, fontWeight:600, textDecoration:t.done?"line-through":"none", color:t.done?"var(--t3)":"var(--t)"}}>{t.title}</div>
+            <div style={{fontSize:13, fontWeight:600,
+              textDecoration: isDone ? "line-through" : "none",
+              color: isDone ? "var(--t3)" : "var(--t)"
+            }}>{t.title}</div>
             {t.time && <span style={{fontSize:10, padding:"2px 7px", borderRadius:18, background:"rgba(245,158,11,.12)", color:"var(--am)", fontWeight:700, flexShrink:0}}>⏰{t.time}</span>}
           </div>
           <div style={{display:"flex", flexWrap:"wrap", gap:4}}>
@@ -253,8 +271,8 @@ function ThisWeekPage({tasks, setTasks, goals, setGoals, addNotif, weekOffset, o
               {t.priority==="high"?"🔴 عالية":t.priority==="medium"?"🟡 متوسطة":"🔵 منخفضة"}
             </span>
             {g && <span style={{fontSize:9, padding:"2px 6px", borderRadius:18, fontWeight:700, background:`${g.color}18`, color:g.color}}>🎯 {g.title}</span>}
-            {t.repeat&&t.repeat!=="none"&&<span style={{fontSize:9, padding:"2px 6px", borderRadius:18, fontWeight:700, background:"rgba(124,110,240,.1)", color:"var(--a2)"}}>🔁 {t.repeat==="daily"?"يومي":t.repeat==="weekly"?"أسبوعي":"شهري"}</span>}
-            {t.done&&t.completedAt&&<span style={{fontSize:9, padding:"2px 6px", borderRadius:18, fontWeight:700, background:"rgba(16,185,129,.1)", color:"var(--g)"}}>✅ {t.completedAt}</span>}
+            {isRepeat && <span style={{fontSize:9, padding:"2px 6px", borderRadius:18, fontWeight:700, background:"rgba(124,110,240,.1)", color:"var(--a2)"}}>🔁 يومي</span>}
+            {isDone && <span style={{fontSize:9, padding:"2px 6px", borderRadius:18, fontWeight:700, background:"rgba(16,185,129,.12)", color:"var(--g)"}}>✅ أُنجزت اليوم</span>}
           </div>
           {t.note && <div style={{marginTop:6, padding:"4px 8px", background:"var(--bg4)", borderRadius:6, borderRight:"2px solid var(--a3)", fontSize:11, color:"var(--t2)"}}>📝 {t.note}</div>}
         </div>
@@ -999,49 +1017,54 @@ export default function App(){
 
   function addNotif(n){const id=Date.now();setNotifs(p=>[...p,{...n,id}]);setTimeout(()=>setNotifs(p=>p.filter(x=>x.id!==id)),3500);}
 
+  // Daily completion state — resets each day
+  const [dailyDone, setDailyDone] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("injaz-daily-done") || "{}");
+      // Reset if it's a new day
+      if (saved.date !== toDay()) return { date: toDay(), ids: [] };
+      return saved;
+    } catch { return { date: toDay(), ids: [] }; }
+  });
+
+  function markDailyDone(id) {
+    setDailyDone(prev => {
+      const newState = { date: toDay(), ids: [...(prev.ids||[]), id] };
+      localStorage.setItem("injaz-daily-done", JSON.stringify(newState));
+      return newState;
+    });
+  }
+
+  function unmarkDailyDone(id) {
+    setDailyDone(prev => {
+      const newState = { date: toDay(), ids: (prev.ids||[]).filter(x => x !== id) };
+      localStorage.setItem("injaz-daily-done", JSON.stringify(newState));
+      return newState;
+    });
+  }
+
   // Global toggle
   async function globalToggle(id) {
     const task = tasks.find(t => t.id === id); if (!task) return;
-    const done = !task.done;
-    const now  = new Date();
-    const today = toDay();
-    const ca = done ? `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}` : null;
+    const isRepeat = task.repeat && task.repeat !== "none";
+    const isDone = (dailyDone.ids||[]).includes(id);
 
-    // Mark done in DB
-    await supabase.from("tasks").update({ done, completed_at: ca }).eq("id", id);
-
-    if (done && task.repeat && task.repeat !== "none") {
-      // Remove immediately + schedule next day
-      const uid = (await supabase.auth.getUser()).data.user?.id;
-      const nd  = getNextRepeat(today, task.repeat);
-      const { data: ex } = await supabase.from("tasks").select("id")
-        .eq("user_id", uid).eq("title", task.title).eq("date", nd).eq("done", false).limit(1);
-
-      if (!ex || !ex.length) {
-        const { data: nx } = await supabase.from("tasks").insert({
-          user_id: uid, title: task.title, priority: task.priority, date: nd,
-          done: false, completed_at: null, repeat: task.repeat,
-          goal_id: task.goalId || task.goal_id || null,
-          time: task.time || null, week_days: task.weekDays || null, note: task.note || null
-        }).select().single();
-        if (nx) {
-          // Remove current + add next in one update
-          setTasks(prev => [
-            ...prev.filter(t => t.id !== id),
-            { ...nx, completedAt: null, goalId: nx.goal_id, weekDays: nx.week_days }
-          ]);
-          addNotif({ type: "success", icon: "🎉", title: "أحسنت! ✅", msg: task.title });
-          addNotif({ type: "info", icon: "🔁", title: "ستظهر غداً 📅", msg: nd });
-          return;
-        }
+    if (isRepeat) {
+      // Repeating tasks: toggle daily completion locally (no DB change)
+      if (isDone) {
+        unmarkDailyDone(id);
+      } else {
+        markDailyDone(id);
+        addNotif({ type: "success", icon: "🎉", title: "أحسنت! ✅", msg: task.title });
       }
-      // Already scheduled — just remove
-      setTasks(prev => prev.filter(t => t.id !== id));
-      addNotif({ type: "success", icon: "🎉", title: "أحسنت! ✅", msg: task.title });
       return;
     }
 
-    // Non-repeating: just show done
+    // Non-repeating: toggle in DB
+    const done = !task.done;
+    const now  = new Date();
+    const ca = done ? `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}` : null;
+    await supabase.from("tasks").update({ done, completed_at: ca }).eq("id", id);
     setTasks(prev => prev.map(t => t.id === id ? { ...t, done, completedAt: ca } : t));
     if (done) {
       addNotif({ type: "success", icon: "🎉", title: "أحسنت! ✅", msg: task.title });
@@ -1150,7 +1173,7 @@ export default function App(){
             <div className="ib" onClick={()=>addNotif({type:"info",icon:"🔔",title:"لا إشعارات جديدة"})}>🔔</div>
           </div>
         </div>
-        {page==="week"     &&<ThisWeekPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} addNotif={addNotif} weekOffset={weekOffset} onToggle={globalToggle}/>}
+        {page==="week"     &&<ThisWeekPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} addNotif={addNotif} weekOffset={weekOffset} onToggle={globalToggle} dailyDone={dailyDone}/>}
         {page==="goals"    &&<GoalsPage goals={goals} setGoals={setGoals} tasks={tasks} addNotif={addNotif} weekOffset={weekOffset}/>}
         {page==="tasks"    &&<TasksPage tasks={tasks} setTasks={setTasks} goals={goals} setGoals={setGoals} addNotif={addNotif} onToggle={globalToggle}/>}
         {page==="pomodoro" &&<PomodoroPage onSession={onPomoSession} addNotif={addNotif} goals={goals}/>}
